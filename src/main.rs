@@ -1,8 +1,11 @@
-mod rom;
 mod filesystem;
+mod formats;
+mod rom;
 
-use rom::{Rom, read_header};
+use formats::narc;
+
 use filesystem::{FileAllocationTable, FileNameTable};
+use rom::{read_header, Rom};
 
 fn main() {
     let rom_eu = Rom::new("../../ROMs/pmd_eos_us.nds");
@@ -11,13 +14,14 @@ fn main() {
 
     let rom_data = std::fs::read(&rom_eu.path).expect("Failed to read ROM file");
 
-    let fat = match FileAllocationTable::read_from_rom(&rom_data, header.fat_offset, header.fat_size) {
-        Ok(fat) => fat,
-        Err(e) => {
-            println!("Error reading FAT: {}", e);
-            return;
-        }
-    };
+    let fat =
+        match FileAllocationTable::read_from_rom(&rom_data, header.fat_offset, header.fat_size) {
+            Ok(fat) => fat,
+            Err(e) => {
+                println!("Error reading FAT: {}", e);
+                return;
+            }
+        };
 
     println!("FAT contains {} entries", fat.entries.len());
 
@@ -39,7 +43,7 @@ fn main() {
     if let Some(root_children) = fnt.directory_structure.get(&0xF000) {
         for (i, &child_id) in root_children.iter().take(5).enumerate() {
             if let Some(name) = fnt.directory_names.get(&child_id) {
-                println!("{}. {} (ID: 0x{:X})", i+1, name, child_id);
+                println!("{}. {} (ID: 0x{:X})", i + 1, name, child_id);
             }
         }
     }
@@ -49,8 +53,12 @@ fn main() {
     if let Some(file_id) = fnt.get_file_id(test_file) {
         println!("\nFound file '{}' with ID: {}", test_file, file_id);
         let entry = &fat.entries[file_id as usize];
-        println!("  Start: 0x{:X}, End: 0x{:X}, Size: {} bytes", 
-            entry.start_address, entry.end_address, entry.size());
+        println!(
+            "  Start: 0x{:X}, End: 0x{:X}, Size: {} bytes",
+            entry.start_address,
+            entry.end_address,
+            entry.size()
+        );
     } else {
         println!("\nFile '{}' not found", test_file);
     }
