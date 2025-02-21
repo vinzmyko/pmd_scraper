@@ -20,11 +20,6 @@ struct RomHeader {
     game_title: String,
     game_code: String,
     maker_code: String,
-    unit_code: u8,
-    nds_region: u8,
-    rom_version: u8,
-    device_capacity: u8,
-    encryption_seed: u8,
     arm9_rom_offset: u32,
     arm9_entry_address: u32,
     arm9_ram_address: u32,
@@ -32,7 +27,12 @@ struct RomHeader {
     fnt_offset: u32,
     fnt_size: u32,
     fat_offset: u32,
-    fat_size: u32
+    fat_size: u32,
+    unit_code: u8,
+    nds_region: u8,
+    rom_version: u8,
+    device_capacity: u8,
+    encryption_seed: u8,
 }
 
 fn read_header(rom_path: &PathBuf) -> RomHeader {
