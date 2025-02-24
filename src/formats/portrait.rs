@@ -1,7 +1,7 @@
 use crate::formats::at4px::At4pxContainer;
 use crate::formats::containers::ContainerHandler;
 use crate::formats::containers::{KAO_IMG_PAL_SIZE, SUBENTRIES, SUBENTRY_LEN};
-use image::{ImageBuffer, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use std::convert::TryInto;
 
 /// Represents a single portrait image from the KAO file
@@ -9,7 +9,7 @@ use std::convert::TryInto;
 pub struct Portrait {
     palette: Vec<[u8; 3]>,    // RGB colors
     compressed_data: Vec<u8>, // AT4PX compressed data
-    pub original_size: usize, // Size of original data
+    _original_size: usize,    // Size of original data
 }
 
 impl Portrait {
@@ -25,21 +25,18 @@ impl Portrait {
             palette.push([data[offset], data[offset + 1], data[offset + 2]]);
         }
 
-        // Get container size before trying to parse
-        let container_size = At4pxContainer::get_container_size(&data[KAO_IMG_PAL_SIZE..])
-            .map_err(|e| format!("Failed to get container size: {}", e))?;
+        // Get container size and deserialize in one step
+        let (container_size, _) =
+            At4pxContainer::get_container_size_and_deserialize(&data[KAO_IMG_PAL_SIZE..])
+                .map_err(|e| format!("Failed to parse AT4PX container: {}", e))?;
 
-        // The rest is AT4PX compressed image data
-        let container = At4pxContainer::deserialize(&data[KAO_IMG_PAL_SIZE..])
-            .map_err(|e| format!("Failed to parse AT4PX container: {}", e))?;
-
-        let original_size = KAO_IMG_PAL_SIZE + container_size;
         let compressed_data = data[KAO_IMG_PAL_SIZE..KAO_IMG_PAL_SIZE + container_size].to_vec();
+        let _original_size = KAO_IMG_PAL_SIZE + container_size;
 
         Ok(Portrait {
             palette,
             compressed_data,
-            original_size,
+            _original_size,
         })
     }
 
@@ -50,46 +47,61 @@ impl Portrait {
 
         let decompressed = container.decompress()?;
 
-        // Image dimensions
-        let img_dim = 40; // 5 tiles * 8 pixels = 40x40 image
-        let mut image = ImageBuffer::new(img_dim, img_dim);
+        const IMG_DIM: u32 = 40;
+        const TILE_DIM: usize = 8;
+        const GRID_DIM: usize = 5;
+        const PIXELS_PER_TILE: usize = TILE_DIM * TILE_DIM;
+        const TOTAL_PIXELS: usize = (IMG_DIM * IMG_DIM) as usize;
+
+        // Create image buffer
+        let mut image = RgbaImage::new(IMG_DIM, IMG_DIM);
+
+        // Pre-calculate tile positions to avoid repeated calculations
+        let mut tile_positions = Vec::with_capacity(GRID_DIM * GRID_DIM);
+        for tile_id in 0..(GRID_DIM * GRID_DIM) {
+            let tile_x = (tile_id % GRID_DIM) as u32;
+            let tile_y = (tile_id / GRID_DIM) as u32;
+            tile_positions.push((tile_x * TILE_DIM as u32, tile_y * TILE_DIM as u32));
+        }
+
+        let expected_pixels = TOTAL_PIXELS;
+        let actual_pixels = decompressed.len() * 2; // Each byte has 2 pixels
+        let pixel_count = std::cmp::min(expected_pixels, actual_pixels);
 
         // Process decompressed data (each byte contains two 4-bit pixels)
-        for (byte_idx, &byte) in decompressed.iter().enumerate() {
+        for byte_idx in 0..(pixel_count / 2) {
+            let byte = decompressed[byte_idx];
+
             // Extract both 4-bit values from the byte
-            let color_idx2 = (byte >> 4) & 0xF; // Store high nibble (will be used second)
-            let color_idx1 = byte & 0xF;        // Store low nibble (will be used first)
+            let color_idx2 = (byte >> 4) & 0xF; // High nibble
+            let color_idx1 = byte & 0xF; // Low nibble
 
-            // Process each nibble (4-bit value) in the byte
+            // Handle two pixels
             for i in 0..2 {
-                let idx = byte_idx * 2 + i; // Each byte holds 2 pixels
+                let idx = byte_idx * 2 + i;
+                // We can skip the bounds check since we've pre-calculated pixel_count
 
-                // Calculate which 8x8 tile this pixel belongs to
-                let tile_id = idx / 64; // Integer division gives us tile number
-                let tile_x = tile_id % 5; // X position in tile grid (0-4)
-                let tile_y = tile_id / 5; // Y position in tile grid (0-4)
+                // Calculate which tile this pixel belongs to
+                let tile_id = idx / PIXELS_PER_TILE;
 
-                // Calculate position within the current 8x8 tile
-                let idx_in_tile = idx - (64 * tile_id); // Position within current tile (0-63)
-                let in_tile_x = idx_in_tile % 8; // X position within tile (0-7)
-                let in_tile_y = idx_in_tile / 8; // Y position within tile (0-7)
+                // Get pre-calculated tile position
+                let (tile_x, tile_y) = tile_positions[tile_id];
+
+                // Calculate position within the current tile
+                let idx_in_tile = idx - (PIXELS_PER_TILE * tile_id);
+                let in_tile_x = (idx_in_tile % TILE_DIM) as u32;
+                let in_tile_y = (idx_in_tile / TILE_DIM) as u32;
 
                 // Calculate final pixel position
-                let x = (tile_x * 8) + in_tile_x;
-                let y = (tile_y * 8) + in_tile_y;
+                let x = tile_x + in_tile_x;
+                let y = tile_y + in_tile_y;
 
                 // Get color index based on which nibble we're processing
                 let color_idx = if i == 0 { color_idx1 } else { color_idx2 };
 
-                // Place the pixel if it's within image bounds
-                if x < img_dim.try_into().unwrap() && y < img_dim.try_into().unwrap() {
-                    let color = &self.palette[color_idx as usize];
-                    image.put_pixel(
-                        x as u32,
-                        y as u32,
-                        Rgba([color[0], color[1], color[2], 255]),
-                    );
-                }
+                // Place the pixel - no need to check if x/y are within bounds
+                let color = &self.palette[color_idx as usize];
+                image.put_pixel(x, y, Rgba([color[0], color[1], color[2], 255]));
             }
         }
 
@@ -118,6 +130,7 @@ impl KaoFile {
         let first_pointer = i32::from_le_bytes(data[first_toc..first_toc + 4].try_into().unwrap());
         let toc_len = ((first_pointer as usize) - first_toc) / (SUBENTRIES * SUBENTRY_LEN);
 
+        // Take ownership of data instead of copying it
         Ok(KaoFile {
             data,
             first_toc,
@@ -160,11 +173,6 @@ impl KaoFile {
             return Err("Invalid portrait pointer".to_string());
         }
 
-        // Read portrait data
         Portrait::from_bytes(&self.data[portrait_pos..]).map(Some)
-    }
-
-    pub fn len(&self) -> usize {
-        self.toc_len
     }
 }

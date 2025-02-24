@@ -2,7 +2,6 @@ mod filesystem;
 mod formats;
 mod rom;
 
-//use crate::formats::containers::{SUBENTRIES, SUBENTRY_LEN, FIRST_TOC_OFFSET};
 use crate::formats::portrait::KaoFile;
 
 use filesystem::{FileAllocationTable, FileNameTable};
@@ -60,31 +59,24 @@ fn extract_portraits(rom_path: &PathBuf, output_dir: &PathBuf) -> Result<(), Str
     // Read ROM data
     let rom_data = fs::read(rom_path).map_err(|e| format!("Failed to read ROM file: {}", e))?;
 
-    // Read header
     let header = read_header(rom_path);
 
-    // Read FAT
     let fat = FileAllocationTable::read_from_rom(&rom_data, header.fat_offset, header.fat_size)
         .map_err(|e| format!("Failed to read FAT: {}", e))?;
 
-    // Read FNT
     let fnt = FileNameTable::read_from_rom(&rom_data, header.fnt_offset)
         .map_err(|e| format!("Failed to read FNT: {}", e))?;
 
-    // Find the KAO file
     let kao_id = fnt.get_file_id("FONT/kaomado.kao").ok_or("Could not find kaomado.kao")?;
     
-    // Get KAO file data
     let kao_data = fat.get_file_data(kao_id as usize, &rom_data)
         .ok_or("Could not read KAO file data")?;
 
     println!("Found KAO file: FONT/kaomado.kao (ID: {})", kao_id);
     println!("KAO file size: {} bytes", kao_data.len());
 
-    // Create KaoFile from the data
     let kao_file = KaoFile::from_bytes(kao_data.to_vec())?;
 
-    // Create output directory if it doesn't exist
     fs::create_dir_all(output_dir).map_err(|e| format!("Failed to create output directory: {}", e))?;
 
     for pokemon_id in 0..= 100 {
