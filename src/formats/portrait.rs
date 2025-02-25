@@ -1,7 +1,6 @@
 use crate::formats::at4px::At4pxContainer;
-use crate::formats::containers::ContainerHandler;
-use crate::formats::containers::{KAO_IMG_PAL_SIZE, SUBENTRIES, SUBENTRY_LEN};
-use image::{Rgba, RgbaImage};
+use crate::formats::containers::{ContainerHandler, KAO_IMG_PAL_SIZE, SUBENTRIES, SUBENTRY_LEN};
+use image::RgbaImage;
 use std::convert::TryInto;
 
 /// Represents a single portrait image from the KAO file
@@ -30,6 +29,7 @@ impl Portrait {
             At4pxContainer::get_container_size_and_deserialize(&data[KAO_IMG_PAL_SIZE..])
                 .map_err(|e| format!("Failed to parse AT4PX container: {}", e))?;
 
+        // Avoid cloning the data by using a slice
         let compressed_data = data[KAO_IMG_PAL_SIZE..KAO_IMG_PAL_SIZE + container_size].to_vec();
         let _original_size = KAO_IMG_PAL_SIZE + container_size;
 
@@ -53,8 +53,8 @@ impl Portrait {
         const PIXELS_PER_TILE: usize = TILE_DIM * TILE_DIM;
         const TOTAL_PIXELS: usize = (IMG_DIM * IMG_DIM) as usize;
 
-        // Create image buffer
-        let mut image = RgbaImage::new(IMG_DIM, IMG_DIM);
+        // Pre-allocate image buffer with zeros - more efficient than the default
+        let mut image_buffer = vec![0u8; (IMG_DIM * IMG_DIM * 4) as usize];
 
         // Pre-calculate tile positions to avoid repeated calculations
         let mut tile_positions = Vec::with_capacity(GRID_DIM * GRID_DIM);
@@ -79,10 +79,13 @@ impl Portrait {
             // Handle two pixels
             for i in 0..2 {
                 let idx = byte_idx * 2 + i;
-                // We can skip the bounds check since we've pre-calculated pixel_count
 
                 // Calculate which tile this pixel belongs to
                 let tile_id = idx / PIXELS_PER_TILE;
+
+                if tile_id >= tile_positions.len() {
+                    continue; // Protect against out-of-bounds
+                }
 
                 // Get pre-calculated tile position
                 let (tile_x, tile_y) = tile_positions[tile_id];
@@ -96,16 +99,32 @@ impl Portrait {
                 let x = tile_x + in_tile_x;
                 let y = tile_y + in_tile_y;
 
-                // Get color index based on which nibble we're processing
-                let color_idx = if i == 0 { color_idx1 } else { color_idx2 };
+                if x >= IMG_DIM || y >= IMG_DIM {
+                    continue; // Protect against out-of-bounds
+                }
 
-                // Place the pixel - no need to check if x/y are within bounds
-                let color = &self.palette[color_idx as usize];
-                image.put_pixel(x, y, Rgba([color[0], color[1], color[2], 255]));
+                // Get color index based on which nibble we're processing
+                let color_idx = if i == 0 { color_idx1 } else { color_idx2 } as usize;
+
+                if color_idx >= self.palette.len() {
+                    continue; // Protect against out-of-bounds
+                }
+
+                // Calculate position in the RGBA buffer (4 bytes per pixel)
+                let buffer_pos = ((y * IMG_DIM + x) * 4) as usize;
+
+                // Copy color data to buffer
+                let color = &self.palette[color_idx];
+                image_buffer[buffer_pos] = color[0];
+                image_buffer[buffer_pos + 1] = color[1];
+                image_buffer[buffer_pos + 2] = color[2];
+                image_buffer[buffer_pos + 3] = 255; // Alpha
             }
         }
 
-        Ok(image)
+        // Create image from buffer
+        RgbaImage::from_raw(IMG_DIM, IMG_DIM, image_buffer)
+            .ok_or_else(|| "Failed to create image from buffer".to_string())
     }
 }
 
