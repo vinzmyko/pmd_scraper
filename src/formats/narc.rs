@@ -2,11 +2,11 @@
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct NarcHeader {
-    pub magic: [u8; 4],     // Always "NARC"
-    pub file_size: u32,     // Total size == 4 bytes
-    pub chunk_size: u16,    // Size header, always 0x0010
-    pub chunk_count: u16,   // Number of chunks, always 3
-    pub byte_order: u16,    // Always 0xFFFE little-endian
+    pub magic: [u8; 4],   // Always "NARC"
+    pub file_size: u32,   // Total size == 4 bytes
+    pub chunk_size: u16,  // Size header, always 0x0010
+    pub chunk_count: u16, // Number of chunks, always 3
+    pub byte_order: u16,  // Always 0xFFFE little-endian
     pub version: u16,
 }
 
@@ -14,10 +14,10 @@ pub struct NarcHeader {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct FatbHeader {
-    pub magic: [u8; 4],     // Always "BTAF"
-    pub size: u32,          // 4 bytes
-    pub file_count: u16,    // Number of files in archive
-    pub reserved: u16,      // Always 0, 2 bytes
+    pub magic: [u8; 4],  // Always "BTAF"
+    pub size: u32,       // 4 bytes
+    pub file_count: u16, // Number of files in archive
+    pub reserved: u16,   // Always 0, 2 bytes
 }
 
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct FatbHeader {
 pub struct NarcFile {
     pub header: NarcHeader,
     pub fatb: FatbHeader,
-    pub file_entries: Vec<(u32, u32)>,  // Stores start and end pairs per file
+    pub file_entries: Vec<(u32, u32)>, // Stores start and end pairs per file
     pub data: Vec<u8>,
 }
 
@@ -48,25 +48,35 @@ impl NarcFile {
 
         // Locate the BTAF chunk
         let mut offset = 16; // After NARC header
-        
+
         // Find BTAF chunk
         while offset + 8 <= data.len() {
-            if &data[offset..offset+4] == b"BTAF" {
+            if &data[offset..offset + 4] == b"BTAF" {
                 break;
             }
             offset += 4;
         }
 
-        if offset + 8 > data.len() || &data[offset..offset+4] != b"BTAF" {
+        if offset + 8 > data.len() || &data[offset..offset + 4] != b"BTAF" {
             return Err("BTAF chunk not found".to_string());
         }
 
         // Parse BTAF header
         let fatb = FatbHeader {
-            magic: [data[offset], data[offset+1], data[offset+2], data[offset+3]],
-            size: u32::from_le_bytes([data[offset+4], data[offset+5], data[offset+6], data[offset+7]]),
-            file_count: u16::from_le_bytes([data[offset+8], data[offset+9]]),
-            reserved: u16::from_le_bytes([data[offset+10], data[offset+11]]),
+            magic: [
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ],
+            size: u32::from_le_bytes([
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
+            ]),
+            file_count: u16::from_le_bytes([data[offset + 8], data[offset + 9]]),
+            reserved: u16::from_le_bytes([data[offset + 10], data[offset + 11]]),
         };
 
         // Move offset to start of file entries
@@ -78,15 +88,21 @@ impl NarcFile {
             if offset + 8 > data.len() {
                 return Err("Unexpected end of NARC data".to_string());
             }
-            
+
             let start = u32::from_le_bytes([
-                data[offset], data[offset+1], data[offset+2], data[offset+3]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]);
-            
+
             let end = u32::from_le_bytes([
-                data[offset+4], data[offset+5], data[offset+6], data[offset+7]
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
             ]);
-            
+
             file_entries.push((start, end));
             offset += 8;
         }
@@ -94,7 +110,7 @@ impl NarcFile {
         // Find the GMIF chunk (where the actual file data begins)
         let mut gmif_offset = offset;
         while gmif_offset + 4 <= data.len() {
-            if &data[gmif_offset..gmif_offset+4] == b"GMIF" {
+            if &data[gmif_offset..gmif_offset + 4] == b"GMIF" {
                 gmif_offset += 8; // Skip over GMIF header and size
                 break;
             }
@@ -119,16 +135,16 @@ impl NarcFile {
         }
 
         let (start, end) = self.file_entries[index];
-        
+
         // Find the GMIF chunk offset
         let mut gmif_offset = 0;
         for i in 0..self.data.len() - 4 {
-            if &self.data[i..i+4] == b"GMIF" {
+            if &self.data[i..i + 4] == b"GMIF" {
                 gmif_offset = i + 8; // Skip GMIF header and size
                 break;
             }
         }
-        
+
         if gmif_offset == 0 {
             return None;
         }
@@ -136,7 +152,7 @@ impl NarcFile {
         // Calculate the absolute offsets
         let abs_start = gmif_offset as u32 + start;
         let abs_end = gmif_offset as u32 + end;
-        
+
         if abs_end as usize > self.data.len() {
             return None;
         }

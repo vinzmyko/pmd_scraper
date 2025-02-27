@@ -1,5 +1,5 @@
 use crate::formats::at4px::At4pxContainer;
-use crate::formats::containers::{ContainerHandler, KAO_IMG_PAL_SIZE, SUBENTRIES, SUBENTRY_LEN};
+use crate::formats::containers::ContainerHandler;
 use image::RgbaImage;
 use std::convert::TryInto;
 
@@ -24,9 +24,9 @@ impl Portrait {
             palette.push([data[offset], data[offset + 1], data[offset + 2]]);
         }
 
-        // Get container size and deserialize in one step
+        // Get container size and deserialise in one step
         let (container_size, _) =
-            At4pxContainer::get_container_size_and_deserialize(&data[KAO_IMG_PAL_SIZE..])
+            At4pxContainer::get_container_size_and_deserialise(&data[KAO_IMG_PAL_SIZE..])
                 .map_err(|e| format!("Failed to parse AT4PX container: {}", e))?;
 
         // Avoid cloning the data by using a slice
@@ -41,10 +41,11 @@ impl Portrait {
     }
 
     pub fn to_rgba_image(&self) -> Result<RgbaImage, String> {
-        // Create AT4PX container and decompress
-        let container = At4pxContainer::deserialize(&self.compressed_data)
+        // Create AT4PX container from compressed data
+        let container = At4pxContainer::deserialise(&self.compressed_data)
             .map_err(|e| format!("Failed to create AT4PX container: {}", e))?;
 
+        // Decompress container as image data
         let decompressed = container.decompress()?;
 
         const IMG_DIM: u32 = 40;
@@ -53,10 +54,10 @@ impl Portrait {
         const PIXELS_PER_TILE: usize = TILE_DIM * TILE_DIM;
         const TOTAL_PIXELS: usize = (IMG_DIM * IMG_DIM) as usize;
 
-        // Pre-allocate image buffer with zeros - more efficient than the default
+        // Buffer that holds the entire rgba image, each pixel contains rgba (4)
         let mut image_buffer = vec![0u8; (IMG_DIM * IMG_DIM * 4) as usize];
 
-        // Pre-calculate tile positions to avoid repeated calculations
+        // Pre-calculates top left corner position
         let mut tile_positions = Vec::with_capacity(GRID_DIM * GRID_DIM);
         for tile_id in 0..(GRID_DIM * GRID_DIM) {
             let tile_x = (tile_id % GRID_DIM) as u32;
@@ -129,67 +130,83 @@ impl Portrait {
 }
 
 /// Represents the entire KAO file containing multiple portraits
+pub const KAO_PORTRAITS_PER_POKEMON: usize = 40;
+pub const KAO_PORTRAIT_POINTER_SIZE: usize = 4;
+pub const KAO_IMG_PAL_SIZE: usize = 48;
+pub const _KAO_IMG_DIM: usize = 40;
+pub const _KAO_TILE_DIM: usize = 8;
+pub const _KAO_META_DIM: usize = 5;
+pub const KAO_FIRST_TOC_OFFSET: usize = 160;
+
 #[derive(Debug)]
 pub struct KaoFile {
     data: Vec<u8>,
-    first_toc: usize,
-    toc_len: usize,
+    toc_start_offset: usize,
+    pokemon_count: usize,
 }
 
 impl KaoFile {
     pub fn from_bytes(data: Vec<u8>) -> Result<Self, String> {
-        // First 160 bytes are padding, followed by TOC
-        let first_toc = SUBENTRIES * SUBENTRY_LEN;
+        // First 160 bytes are padding
+        let toc_start_offset = KAO_FIRST_TOC_OFFSET;
 
-        if data.len() < first_toc + 4 {
+        if data.len() < toc_start_offset + 4 {
             return Err("Data too short for KAO file".to_string());
         }
 
-        // Read first pointer to determine TOC length
-        let first_pointer = i32::from_le_bytes(data[first_toc..first_toc + 4].try_into().unwrap());
-        let toc_len = ((first_pointer as usize) - first_toc) / (SUBENTRIES * SUBENTRY_LEN);
+        // Read first portrait_pointer to determine TOC length
+        let first_portrait_portrait_pointer = i32::from_le_bytes(
+            data[toc_start_offset..toc_start_offset + 4]
+                .try_into()
+                .unwrap(),
+        );
 
-        // Take ownership of data instead of copying it
+        let toc_size_bytes = (first_portrait_portrait_pointer as usize) - toc_start_offset;
+        let pokemon_entry_size = KAO_PORTRAITS_PER_POKEMON * KAO_PORTRAIT_POINTER_SIZE;
+        let pokemon_count = toc_size_bytes / pokemon_entry_size;
+
         Ok(KaoFile {
             data,
-            first_toc,
-            toc_len,
+            toc_start_offset,
+            pokemon_count,
         })
     }
 
     pub fn get_portrait(&self, index: usize, subindex: usize) -> Result<Option<Portrait>, String> {
-        if index >= self.toc_len {
+        if index >= self.pokemon_count {
             return Err(format!(
                 "Portrait index {} out of bounds (max {})",
-                index, self.toc_len
+                index, self.pokemon_count
             ));
         }
-        if subindex >= SUBENTRIES {
+        if subindex >= KAO_PORTRAITS_PER_POKEMON {
             return Err(format!(
                 "Subindex {} out of bounds (max {})",
-                subindex, SUBENTRIES
+                subindex, KAO_PORTRAITS_PER_POKEMON
             ));
         }
 
         // Calculate TOC entry position
-        let entry_pos =
-            self.first_toc + (index * SUBENTRIES * SUBENTRY_LEN) + (subindex * SUBENTRY_LEN);
+        let entry_pos = self.toc_start_offset
+            + (index * KAO_PORTRAITS_PER_POKEMON * KAO_PORTRAIT_POINTER_SIZE)
+            + (subindex * KAO_PORTRAIT_POINTER_SIZE);
 
         if entry_pos + 4 > self.data.len() {
             return Err("Invalid TOC entry position".to_string());
         }
 
         // Read pointer
-        let pointer = i32::from_le_bytes(self.data[entry_pos..entry_pos + 4].try_into().unwrap());
+        let portrait_pointer =
+            i32::from_le_bytes(self.data[entry_pos..entry_pos + 4].try_into().unwrap());
 
         // Negative pointer means no portrait at this position
-        if pointer < 0 {
+        if portrait_pointer < 0 {
             return Ok(None);
         }
 
-        let portrait_pos = pointer as usize;
+        let portrait_pos = portrait_pointer as usize;
         if portrait_pos >= self.data.len() {
-            return Err("Invalid portrait pointer".to_string());
+            return Err("Invalid portrait portrait_pointer".to_string());
         }
 
         Portrait::from_bytes(&self.data[portrait_pos..]).map(Some)

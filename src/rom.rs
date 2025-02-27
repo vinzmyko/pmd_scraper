@@ -1,11 +1,14 @@
+/// Reads the ROM header and creates a RomHeader data structure
 use std::fs::File;
-use std::path::PathBuf;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::PathBuf;
 
+#[allow(dead_code)]
 pub struct Rom {
     pub path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl Rom {
     pub fn new<P: Into<PathBuf>>(path: P) -> Self {
         Rom { path: path.into() }
@@ -33,13 +36,14 @@ pub struct RomHeader {
     pub encryption_seed: u8,
 }
 
+// Create RomHeader struct based on GBATEK documentation
 pub fn read_header(rom_path: &PathBuf) -> RomHeader {
     let mut file = File::open(rom_path).unwrap();
 
-    let mut title_buffer = [0u8; 12];
-    file.seek(SeekFrom::Start(0x000)).unwrap();
-    file.read_exact(&mut title_buffer).unwrap();
-
+    let mut title_buffer = [0u8; 12]; // Create an array of size 12 with 0u8.
+    file.seek(SeekFrom::Start(0x000)).unwrap(); // Move cursor to specified position.
+    file.read_exact(&mut title_buffer).unwrap(); // Read buffer size from current file cursor
+                                                 // and fill buffer with this data.
     let mut game_code_buffer = [0u8; 4];
     file.seek(SeekFrom::Start(0x00C)).unwrap();
     file.read_exact(&mut game_code_buffer).unwrap();

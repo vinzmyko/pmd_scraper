@@ -1,18 +1,13 @@
 use std::collections::HashMap;
 use std::usize;
 
+// A FatEntry contains the file location
 pub struct FatEntry {
-    pub start_address: u32,
-    pub end_address: u32,
+    pub start_address: u32, // 4 bytes long
+    pub end_address: u32,   // 4 bytes long
 }
 
-impl FatEntry {
-    #[inline]
-    pub fn size(&self) -> u32 {
-        self.end_address - self.start_address
-    }
-}
-
+// Contains all the files
 pub struct FileAllocationTable {
     pub entries: Vec<FatEntry>,
 }
@@ -24,21 +19,18 @@ impl FileAllocationTable {
         fat_offset: u32,
         fat_size: u32,
     ) -> Result<Self, std::io::Error> {
-        // Each file entry is 8 bytes long, 4 bytes for each the start and end address
         let num_entries = fat_size / 8;
-        
-        // Pre-allocate the full vector size to avoid reallocations
+
         let mut entries = Vec::with_capacity(num_entries as usize);
 
         for i in 0..num_entries {
-            // Each entry is 8 bytes long
             let entry_offset = fat_offset as usize + (i as usize * 8);
-            
-            // Bounds check to prevent panics
+
+            // Useful for finding if this ROM is corrupted
             if entry_offset + 8 > rom_data.len() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "FAT entry offset out of bounds"
+                    "FAT entry offset out of bounds",
                 ));
             }
 
@@ -57,6 +49,7 @@ impl FileAllocationTable {
                 rom_data[entry_offset + 7],
             ]);
 
+            // Unused entries have either 0 for start or end
             if start != 0 || end != 0 {
                 entries.push(FatEntry {
                     start_address: start,
@@ -74,27 +67,33 @@ impl FileAllocationTable {
         }
 
         let entry = &self.entries[file_id];
-        
-        // Bounds checking to prevent panic
-        if entry.start_address as usize > rom_data.len() || 
-           entry.end_address as usize > rom_data.len() {
+
+        if entry.start_address as usize > rom_data.len()
+            || entry.end_address as usize > rom_data.len()
+        {
             return None;
         }
-        
+
         Some(&rom_data[entry.start_address as usize..entry.end_address as usize])
     }
 }
 
 pub struct DirectoryEntry {
-    pub offset: u32,        // Offset to sub-table
+    pub offset: u32, // Offset to sub-table
     pub first_file_id: u16,
-    pub parent_id: u16
+    pub parent_id: u16,
 }
 
 pub enum FntEntry {
     File(String),
-    Directory(String, u16)
+    Directory(String, u16),
 }
+
+/// Base ID for directories in the NDS filesystem
+/// Directories have IDs starting from 0xF000, with their index added to this base
+const DIRECTORY_ID_BASE: u16 = 0xF000;
+const ESTIMATED_ENTRIES_PER_SUBTABLE: usize = 16;
+const ESTIMATED_FILES_PER_DIRECTORY: usize = 8;
 
 pub struct FileNameTable {
     pub directories: Vec<DirectoryEntry>,
@@ -112,27 +111,31 @@ impl FileNameTable {
             directory_names: HashMap::new(),
             directory_structure: HashMap::new(),
         };
-        
+
         fnt.read_main_directory_table(rom_data, fnt_offset)?;
         fnt.parse_subtables(rom_data, fnt_offset)?;
-        
+
         Ok(fnt)
     }
 
     /// Push values to FileNameTable
-    fn read_main_directory_table(&mut self, rom_data: &[u8], fnt_offset: u32) -> Result<(), std::io::Error> {
-        // Bounds check
+    fn read_main_directory_table(
+        &mut self,
+        rom_data: &[u8],
+        fnt_offset: u32,
+    ) -> Result<(), std::io::Error> {
         if fnt_offset as usize + 8 > rom_data.len() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "FNT offset out of bounds"
+                "FNT offset out of bounds",
             ));
         }
-        
+
         // Firstly, read number of dir from root entry
         let total_dirs_offset = fnt_offset as usize + 6;
-        let total_dirs = u16::from_le_bytes([   // Converts two bytes to a u16 value which is the
-            rom_data[total_dirs_offset],        // number of dirs
+        let total_dirs = u16::from_le_bytes([
+            // Converts two bytes to a u16 value which is the
+            rom_data[total_dirs_offset], // number of dirs
             rom_data[total_dirs_offset + 1],
         ]);
 
@@ -142,12 +145,11 @@ impl FileNameTable {
         for i in 0..total_dirs {
             // Each sub-table is 8 bytes
             let dir_offset = fnt_offset as usize + (i as usize * 8);
-            
-            // Bounds check
+
             if dir_offset + 8 > rom_data.len() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "Directory entry offset out of bounds"
+                    "Directory entry offset out of bounds",
                 ));
             }
 
@@ -156,27 +158,23 @@ impl FileNameTable {
                 rom_data[dir_offset],
                 rom_data[dir_offset + 1],
                 rom_data[dir_offset + 2],
-                rom_data[dir_offset + 3]
+                rom_data[dir_offset + 3],
             ]);
 
-            let first_file_id = u16::from_le_bytes([
-                rom_data[dir_offset + 4],
-                rom_data[dir_offset + 5]
-            ]);
+            let first_file_id =
+                u16::from_le_bytes([rom_data[dir_offset + 4], rom_data[dir_offset + 5]]);
 
-            let parent_or_total = u16::from_le_bytes([
-                rom_data[dir_offset + 6],
-                rom_data[dir_offset + 7]
-            ]);
+            let parent_or_total =
+                u16::from_le_bytes([rom_data[dir_offset + 6], rom_data[dir_offset + 7]]);
 
-            // For the root directory (ID 0xF000), this is the total number of directories
+            // For the root directory (ID DIRECTORY_ID_BASE), this is the total number of directories
             // For other directories, this is the parent directory ID
             let parent_id = if i == 0 { 0xFFFF } else { parent_or_total };
 
             self.directories.push(DirectoryEntry {
                 offset: subtable_offset,
                 first_file_id,
-                parent_id
+                parent_id,
             });
         }
 
@@ -184,45 +182,47 @@ impl FileNameTable {
     }
 
     /// Parse a single sub-table and return its entries
-    fn parse_subtable(&self, rom_data: &[u8], fnt_base: u32, subtable_offset: u32) 
-    -> Result<Vec<FntEntry>, std::io::Error> {
-        // Initial capacity estimation based on typical subtable sizes
-        let mut entries = Vec::with_capacity(16);
+    fn parse_subtable(
+        &self,
+        rom_data: &[u8],
+        fnt_base: u32,
+        subtable_offset: u32,
+    ) -> Result<Vec<FntEntry>, std::io::Error> {
+        let mut entries = Vec::with_capacity(ESTIMATED_ENTRIES_PER_SUBTABLE);
         let mut pos = fnt_base as usize + subtable_offset as usize;
 
-        // Bounds check
         if pos >= rom_data.len() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Subtable offset out of bounds"
+                "Subtable offset out of bounds",
             ));
         }
 
         loop {
-            // Bounds check
             if pos >= rom_data.len() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "Unexpected end of data in subtable"
+                    "Unexpected end of data in subtable",
                 ));
             }
 
-            let type_length = rom_data[pos];
+            // Highest bit represents file or dir, lower 7 bits represent name length
+            let type_and_length_byte = rom_data[pos];
+            // Read type_and_length_byte which is one byte
             pos += 1;
 
             // Check for end of table marker
-            if type_length == 0 {
+            if type_and_length_byte == 0 {
                 break;
             }
 
-            // Extract the actual length (lower 7 bits)
-            let length = type_length & 0x7F;
+            // `0x7F` = `0b01111111` Nullifies highest bit and stores name length
+            let length = type_and_length_byte & 0x7F;
 
-            // Bounds check for name extraction
             if pos + length as usize > rom_data.len() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "Name length exceeds available data"
+                    "Name length exceeds available data",
                 ));
             }
 
@@ -231,24 +231,20 @@ impl FileNameTable {
             let name = String::from_utf8_lossy(name_bytes).to_string();
             pos += length as usize;
 
-            // Check if this is a file or directory entry
-            if type_length & 0x80 == 0 {
+            // `0x80` = `0b10000000` Only keeps the highest bit
+            if type_and_length_byte & 0x80 == 0 {
                 // File entry (no ID field)
                 entries.push(FntEntry::File(name));
             } else {
                 // Directory entry (has ID field)
-                // Bounds check
                 if pos + 2 > rom_data.len() {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        "Directory ID out of bounds"
+                        "Directory ID out of bounds",
                     ));
                 }
 
-                let dir_id = u16::from_le_bytes([
-                    rom_data[pos],
-                    rom_data[pos + 1]
-                ]);
+                let dir_id = u16::from_le_bytes([rom_data[pos], rom_data[pos + 1]]);
                 pos += 2;
                 entries.push(FntEntry::Directory(name, dir_id));
             }
@@ -259,32 +255,31 @@ impl FileNameTable {
 
     /// Parse all sub-tables and build our file/directory maps
     fn parse_subtables(&mut self, rom_data: &[u8], fnt_offset: u32) -> Result<(), std::io::Error> {
-        // Pre-allocate hashmaps with reasonable capacity
         let dir_count = self.directories.len();
-        self.file_names = HashMap::with_capacity(dir_count * 8); // Estimate 8 files per directory
+        self.file_names = HashMap::with_capacity(dir_count * ESTIMATED_FILES_PER_DIRECTORY);
         self.directory_names = HashMap::with_capacity(dir_count);
         self.directory_structure = HashMap::with_capacity(dir_count);
-        
+
         // Process each directory's sub-table
         for (dir_index, dir_entry) in self.directories.iter().enumerate() {
-            let dir_id = 0xF000 + dir_index as u16;
+            let dir_id = DIRECTORY_ID_BASE + dir_index as u16;
 
-            // Parse this directory's sub-table
+            // Get the file entries of this subtable as Vec<FntEntry>
             let entries = self.parse_subtable(rom_data, fnt_offset, dir_entry.offset)?;
 
-            // Track the current file ID 
+            // Track the current file ID
             let mut file_id = dir_entry.first_file_id;
 
             // Process each entry
             for entry in entries {
                 match entry {
+                    // Destructure value to be inserted in file_names
                     FntEntry::File(name) => {
                         // Map this file ID to its name
                         self.file_names.insert(file_id, name);
-                        file_id += 1; // File IDs are sequential
-                    },
+                        file_id += 1; // File IDs are sequential, increment after inserting
+                    }
                     FntEntry::Directory(name, child_dir_id) => {
-                        // Map this directory ID to its name
                         self.directory_names.insert(child_dir_id, name);
 
                         // Add to directory structure (parent -> children relationship)
@@ -302,12 +297,13 @@ impl FileNameTable {
 
     /// Get the full path for a directory ID
     fn get_directory_path(&self, dir_id: u16) -> Option<String> {
-        if dir_id == 0xF000 {
+        if dir_id == DIRECTORY_ID_BASE {
             // Root directory has empty path
             return Some(String::new());
         }
 
         // Find the directory entry
+        // Lower 12 bits indicate index of directory
         let dir_index = (dir_id & 0x0FFF) as usize;
         if dir_index >= self.directories.len() {
             return None;
@@ -340,16 +336,18 @@ impl FileNameTable {
         }
 
         // Start at the root directory
-        let mut current_dir_id = 0xF000;
-        let mut i = 0;
+        let mut current_dir_id = DIRECTORY_ID_BASE;
+        let mut dir = 0;
 
         // Traverse directories in the path
-        while i < parts.len() - 1 {
-            let dir_name = parts[i];
+        while dir < parts.len() - 1 {
+            let dir_name = parts[dir];
 
             // Find the child directory with this name
             let mut found = false;
+            // Looks up children of current directory
             if let Some(children) = self.directory_structure.get(&current_dir_id) {
+                // Goes through each child directory id
                 for &child_id in children {
                     if let Some(name) = self.directory_names.get(&child_id) {
                         if name == dir_name {
@@ -365,7 +363,7 @@ impl FileNameTable {
                 return None;
             }
 
-            i += 1;
+            dir += 1;
         }
 
         // Find the file in the current directory
@@ -385,7 +383,7 @@ impl FileNameTable {
                     return Some(id);
                 }
             } else {
-                // We've reached the end of files in this directory
+                // End of files in current dir
                 break;
             }
         }
