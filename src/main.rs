@@ -9,6 +9,9 @@ use rom::read_header;
 use std::fs;
 use std::path::PathBuf;
 
+use std::sync::{Arc, Mutex};
+use std::thread;
+
 fn main() {
     let rom_path = PathBuf::from("../../ROMs/pmd_eos_us.nds");
     let output_dir = PathBuf::from("./output/FONT");
@@ -34,7 +37,6 @@ fn main() {
 }
 
 fn extract_portraits(rom_path: &PathBuf, output_dir: &PathBuf) -> Result<(), String> {
-    // Read ROM data once - this is a key optimization we want to keep
     let rom_data = fs::read(rom_path).map_err(|e| format!("Failed to read ROM file: {}", e))?;
 
     let header = read_header(rom_path);
@@ -63,36 +65,76 @@ fn extract_portraits(rom_path: &PathBuf, output_dir: &PathBuf) -> Result<(), Str
     fs::create_dir_all(output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
 
-    // For your use case: extract all portraits that exist
+    let num_threads = thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4);
+
+    println!("Using {} threads for extraction", num_threads);
+
+    let max_pokemon_id = 600;
+    let chunk_size = (max_pokemon_id + 1) / num_threads;
+
     println!("Extracting portraits to build sprite atlases...");
-    let mut extracted_count = 0;
 
-    for pokemon_id in 0..=600 {
-        if let Ok(Some(portrait)) = kao_file.get_portrait(pokemon_id, 0) {
-            let output_path = output_dir.join(format!("pokemon_{:03}.png", pokemon_id));
+    let kao_file = Arc::new(kao_file);
+    let output_dir = Arc::new(output_dir.clone());
+    let extracted_count = Arc::new(Mutex::new(0));
 
-            match portrait.to_rgba_image() {
-                Ok(image) => {
-                    if let Err(e) = image.save(&output_path) {
-                        println!("Warning: Failed to save portrait {}: {}", pokemon_id, e);
-                    } else {
-                        extracted_count += 1;
+    let mut handles = Vec::new();
 
-                        if extracted_count % 20 == 0 {
-                            println!("Extracted {} portraits so far...", extracted_count);
+    for thread_id in 0..num_threads {
+        let start_id = thread_id * chunk_size;
+        let end_id = if thread_id == num_threads - 1 {
+            max_pokemon_id
+        } else {
+            (thread_id + 1) * chunk_size - 1
+        };
+
+        let kao_file_clone = Arc::clone(&kao_file);
+        let output_dir_clone = Arc::clone(&output_dir);
+        let count_clone = Arc::clone(&extracted_count);
+
+        let handle = thread::spawn(move || {
+            let mut local_count = 0;
+
+            for pokemon_id in start_id..=end_id {
+                if let Ok(Some(portrait)) = kao_file_clone.get_portrait(pokemon_id, 0) {
+                    let output_path =
+                        output_dir_clone.join(format!("pokemon_{:03}.png", pokemon_id));
+
+                    match portrait.to_rgba_image() {
+                        Ok(image) => {
+                            if let Err(e) = image.save(&output_path) {
+                                println!("Warning: Failed to save portrait {}: {}", pokemon_id, e);
+                            } else {
+                                local_count += 1;
+                            }
+                        }
+                        Err(e) => {
+                            println!(
+                                "Warning: Failed to convert portrait {} to image: {}",
+                                pokemon_id, e
+                            );
                         }
                     }
                 }
-                Err(e) => {
-                    println!(
-                        "Warning: Failed to convert portrait {} to image: {}",
-                        pokemon_id, e
-                    );
-                }
             }
+
+            let mut global_count = count_clone.lock().unwrap();
+            *global_count += local_count;
+            println!("Thread {} extracted {} portraits", thread_id, local_count);
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        if let Err(e) = handle.join() {
+            println!("Warning: Thread panicked: {:?}", e);
         }
     }
 
-    println!("Successfully extracted {} portraits", extracted_count);
+    let final_count = *extracted_count.lock().unwrap();
+    println!("Successfully extracted {} portraits", final_count);
     Ok(())
 }
