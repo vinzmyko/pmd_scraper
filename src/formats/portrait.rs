@@ -232,10 +232,9 @@ pub fn create_portrait_atlas(
     output_path: &PathBuf,
 ) -> Result<RgbaImage, String> {
     let width = 1280;
-    let (columns, raw_height, padded_height, max_portraits): (u32, u32, u32, u32) = match atlas_type
-    {
-        AtlasType::Pokedex => (32, 680, 1024, 552), // Use of Power-of-Two padding
-        AtlasType::Expressions => (32, 800, 1024, 535),
+    let (columns, padded_height, max_portraits): (u32, u32, u32) = match atlas_type {
+        AtlasType::Pokedex => (32, 1024, 552), // Use of Power-of-Two padding for optimisation
+        AtlasType::Expressions => (32, 1024, 535),
     };
 
     let mut atlas = RgbaImage::new(width, padded_height);
@@ -265,8 +264,10 @@ pub fn create_portrait_atlas(
                     if let Ok(portrait_image) = portrait.to_rgba_image() {
                         copy_image_to_atlas(&mut atlas, &portrait_image, x as usize, y as usize);
 
-                        portrait_metadata
-                            .insert(format!("mon_{:03}", pokemon_id + 1), (x as usize, y as usize));
+                        portrait_metadata.insert(
+                            format!("mon_{:03}", pokemon_id + 1),
+                            (x as usize, y as usize),
+                        );
 
                         portrait_count += 1;
                     }
@@ -291,7 +292,9 @@ pub fn create_portrait_atlas(
                         continue;
                     }
 
-                    if let Ok(Some(portrait)) = kao_file.get_portrait(pokemon_id as usize, emotion_index) {
+                    if let Ok(Some(portrait)) =
+                        kao_file.get_portrait(pokemon_id as usize, emotion_index)
+                    {
                         let grid_x = portrait_count % columns;
                         let grid_y = portrait_count / columns;
 
@@ -299,7 +302,12 @@ pub fn create_portrait_atlas(
                         let y = grid_y * PORTRAIT_SIZE as u32;
 
                         if let Ok(portrait_image) = portrait.to_rgba_image() {
-                            copy_image_to_atlas(&mut atlas, &portrait_image, x as usize, y as usize);
+                            copy_image_to_atlas(
+                                &mut atlas,
+                                &portrait_image,
+                                x as usize,
+                                y as usize,
+                            );
 
                             portrait_metadata.insert(
                                 format!("mon_{:03}_{}", pokemon_id + 1, emotion_idx),
@@ -319,7 +327,7 @@ pub fn create_portrait_atlas(
     match save_metadata(&portrait_metadata, &metadata_output_path) {
         Ok(_data) => {
             println!("Successfully saved portrait metadata");
-        },
+        }
         Err(e) => {
             println!("Error saving metadata: {}", e);
         }
@@ -340,10 +348,7 @@ fn copy_image_to_atlas(atlas: &mut RgbaImage, portrait: &RgbaImage, x: usize, y:
     }
 }
 
-fn save_metadata(
-    metadata: &HashMap<String, (usize, usize)>,
-    path: &PathBuf,
-) -> Result<(), String> {
+fn save_metadata(metadata: &HashMap<String, (usize, usize)>, path: &PathBuf) -> Result<(), String> {
     let json_string = serde_json::to_string_pretty(&metadata)
         .map_err(|e| format!("Failed to serialise HashMap: {}", e))?;
 
