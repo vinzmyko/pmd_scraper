@@ -1,7 +1,13 @@
 use crate::formats::at4px::At4pxContainer;
 use crate::formats::containers::ContainerHandler;
 use image::RgbaImage;
+use serde_json;
+use std::collections::HashMap;
 use std::convert::TryInto;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+use std::usize;
 
 /// Represents a single portrait image from the KAO file
 #[derive(Clone, Debug)]
@@ -211,4 +217,140 @@ impl KaoFile {
 
         Portrait::from_bytes(&self.data[portrait_pos..]).map(Some)
     }
+}
+
+pub enum AtlasType {
+    Pokedex,
+    Expressions,
+}
+
+pub const PORTRAIT_SIZE: u8 = 40;
+
+pub fn create_portrait_atlas(
+    kao_file: &KaoFile,
+    atlas_type: AtlasType,
+    output_path: &PathBuf,
+) -> Result<RgbaImage, String> {
+    let width = 1280;
+    let (columns, raw_height, padded_height, max_portraits): (u32, u32, u32, u32) = match atlas_type
+    {
+        AtlasType::Pokedex => (32, 680, 1024, 552), // Use of Power-of-Two padding
+        AtlasType::Expressions => (32, 800, 1024, 535),
+    };
+
+    let mut atlas = RgbaImage::new(width, padded_height);
+
+    for pixel in atlas.pixels_mut() {
+        *pixel = image::Rgba([0, 0, 0, 0]);
+    }
+
+    let mut portrait_count = 0;
+
+    let mut portrait_metadata: HashMap<String, (usize, usize)> = HashMap::new();
+
+    match atlas_type {
+        AtlasType::Pokedex => {
+            for pokemon_id in 0..max_portraits {
+                if pokemon_id > 535 && pokemon_id < 551 {
+                    continue;
+                }
+
+                if let Ok(Some(portrait)) = kao_file.get_portrait(pokemon_id as usize, 0) {
+                    let grid_x = portrait_count % columns;
+                    let grid_y = portrait_count / columns;
+
+                    let x = grid_x * PORTRAIT_SIZE as u32;
+                    let y = grid_y * PORTRAIT_SIZE as u32;
+
+                    if let Ok(portrait_image) = portrait.to_rgba_image() {
+                        copy_image_to_atlas(&mut atlas, &portrait_image, x as usize, y as usize);
+
+                        portrait_metadata
+                            .insert(format!("mon_{:03}", pokemon_id + 1), (x as usize, y as usize));
+
+                        portrait_count += 1;
+                    }
+                }
+            }
+        }
+        AtlasType::Expressions => {
+            let emotion_indices = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 32, 34];
+            let ignore_portraits = [143, 144, 177, 415];
+
+            for pokemon_id in 0..max_portraits {
+                if ignore_portraits.contains(&pokemon_id) {
+                    continue;
+                }
+
+                let mut emotion_idx = 1;
+                for &emotion_index in &emotion_indices {
+                    if pokemon_id == 37
+                        || pokemon_id == 146
+                        || (pokemon_id == 64 && emotion_index > 4)
+                    {
+                        continue;
+                    }
+
+                    if let Ok(Some(portrait)) = kao_file.get_portrait(pokemon_id as usize, emotion_index) {
+                        let grid_x = portrait_count % columns;
+                        let grid_y = portrait_count / columns;
+
+                        let x = grid_x * PORTRAIT_SIZE as u32;
+                        let y = grid_y * PORTRAIT_SIZE as u32;
+
+                        if let Ok(portrait_image) = portrait.to_rgba_image() {
+                            copy_image_to_atlas(&mut atlas, &portrait_image, x as usize, y as usize);
+
+                            portrait_metadata.insert(
+                                format!("mon_{:03}_{}", pokemon_id + 1, emotion_idx),
+                                (x as usize, y as usize),
+                            );
+                            emotion_idx += 1;
+                            portrait_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let metadata_output_path = output_path.with_extension("json");
+
+    match save_metadata(&portrait_metadata, &metadata_output_path) {
+        Ok(_data) => {
+            println!("Successfully saved portrait metadata");
+        },
+        Err(e) => {
+            println!("Error saving metadata: {}", e);
+        }
+    }
+
+    Ok(atlas)
+}
+
+fn copy_image_to_atlas(atlas: &mut RgbaImage, portrait: &RgbaImage, x: usize, y: usize) {
+    for (p_x, p_y, pixel) in portrait.enumerate_pixels() {
+        let atlas_x = (x + p_x as usize) as u32;
+        let atlas_y = (y + p_y as usize) as u32;
+
+        // Only copy if within bounds
+        if atlas_x < atlas.width() && atlas_y < atlas.height() {
+            atlas.put_pixel(atlas_x, atlas_y, *pixel);
+        }
+    }
+}
+
+fn save_metadata(
+    metadata: &HashMap<String, (usize, usize)>,
+    path: &PathBuf,
+) -> Result<(), String> {
+    let json_string = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| format!("Failed to serialise HashMap: {}", e))?;
+
+    let mut file = File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
+
+    file.write_all(json_string.as_bytes())
+        .map_err(|e| format!("Failed to write to file: {}", e))?;
+
+    Ok(())
 }
