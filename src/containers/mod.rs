@@ -1,3 +1,7 @@
+pub mod compression;
+pub mod binpack;
+pub mod sir0;
+
 use std::io;
 
 pub trait CompressionContainer {

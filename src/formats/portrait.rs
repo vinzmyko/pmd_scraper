@@ -1,5 +1,5 @@
-use crate::formats::at4px::At4pxContainer;
-use crate::formats::containers::ContainerHandler;
+use crate::containers::ContainerHandler;
+use crate::containers::compression::at4px::At4pxContainer;
 use image::RgbaImage;
 use serde_json;
 use std::collections::HashMap;
