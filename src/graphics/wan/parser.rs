@@ -97,19 +97,9 @@ pub fn auto_detect_and_parse_wan(data: &[u8], data_pointer: u32) -> Result<WanFi
     // Parse the SIR0 container to get its content and pointer offset table
     let sir0_data = match sir0::Sir0::from_bytes(data) {
         Ok(sir0) => {
-            println!("  - Successfully parsed SIR0 container");
-            println!(
-                "  - Found {} pointer offsets for resolution",
-                sir0.content_pointer_offsets.len()
-            );
             sir0
         }
         Err(e) => {
-            // If SIR0 parsing fails, we'll continue with no pointer offsets
-            // This preserves backward compatibility but logs warnings
-            println!("  - Warning: SIR0 parsing failed: {}", e);
-            println!("  - Continuing with direct data access and no pointer offsets");
-
             // Create cursor directly on the input data
             let mut reader = Cursor::new(data);
             let buffer_size = data.len() as u64;
@@ -175,19 +165,13 @@ fn detect_and_parse_wan_type(
     // Based on img_type, choose the correct parser
     match img_type {
         1 => {
-            println!("  - Detected Character WAN (imgType=1)");
             parse_character_wan(reader, buffer_size)
         }
         2 | 3 => {
-            println!("  - Detected Effect WAN (imgType={})", img_type);
             parse_effect_wan(reader, buffer_size)
         }
         _ => {
             // If unknown type, try Character first, then Effect as fallback
-            println!(
-                "  - Unknown WAN type (imgType={}), trying Character parser",
-                img_type
-            );
             match parse_character_wan(reader, buffer_size) {
                 Ok(wan) => Ok(wan),
                 Err(e) => {
@@ -230,8 +214,6 @@ pub fn parse_character_wan(
     reader: &mut Cursor<&[u8]>,
     buffer_size: u64,
 ) -> Result<WanFile, WanError> {
-    println!("Beginning WAN parsing");
-
     // Store current position to check for minimal header
     let start_pos = reader.position();
 
@@ -342,7 +324,6 @@ pub fn parse_character_wan(
     ) {
         Ok(data) => data,
         Err(e) => {
-            // If palette reading fails, provide a default palette
             println!("  - Warning: Failed to read palette data: {:?}", e);
             println!("  - Using default palette");
             vec![vec![(0, 0, 0, 0); 16]]
@@ -688,11 +669,6 @@ fn read_palette_data(
     end_ptr: u64, // This is now the end boundary of palette data
     nb_colors_per_row: usize,
 ) -> Result<Vec<Vec<(u8, u8, u8, u8)>>, WanError> {
-    println!(
-        "Reading palette data from 0x{:x} to 0x{:x}",
-        ptr_palette_data_block, end_ptr
-    );
-
     debug_assert!(
         ptr_palette_data_block > 0,
         "Palette data block pointer is zero"
@@ -722,10 +698,6 @@ fn read_palette_data(
     } else {
         total_colors / nb_colors_per_row
     };
-    println!(
-        "  Found {} total colors, {} palettes with {} colors per row",
-        total_colors, total_palettes, nb_colors_per_row
-    );
 
     let mut custom_palette = Vec::with_capacity(total_palettes);
 
@@ -912,12 +884,6 @@ fn read_image_data(
 ) -> Result<Vec<ImgPiece>, WanError> {
     let mut img_data = Vec::with_capacity(ptr_imgs.len());
 
-    println!(
-        "Reading image data: {} pointers, buffer size: {} bytes",
-        ptr_imgs.len(),
-        buffer_size
-    );
-
     for (img_idx, &ptr_img) in ptr_imgs.iter().enumerate() {
         // Use pointer directly - now correctly pointing to file position
         if let Err(e) = reader.seek(SeekFrom::Start(ptr_img as u64)) {
@@ -1012,18 +978,12 @@ fn read_image_data(
                 }
                 valid_data = true;
                 zero_filled_sections += 1;
-                
-                println!("  - Image #{}: Using zero-fill for {} pixels (ptr=0)", img_idx, amt);
             } else {
                 // Save current position to return to after reading pixels
                 let current_pos = reader.position();
 
                 // Use pixel source pointer directly
                 if let Err(e) = reader.seek(SeekFrom::Start(ptr_pix_src as u64)) {
-                    println!(
-                        "  - Warning: Failed to seek to pixel data at {:#x} for image #{}: {}",
-                        ptr_pix_src, img_idx, e
-                    );
                     if let Err(seek_e) = reader.seek(SeekFrom::Start(current_pos)) {
                         println!("  - Warning: Failed to restore position: {}", seek_e);
                     }
@@ -1074,20 +1034,6 @@ fn read_image_data(
 
         // Only add if we read some valid data
         if valid_data && !img_piece.img_px.is_empty() {
-            println!(
-                "  - Image #{}: Read {} pixel strips, {} out of {} pixels ({:.1}%), zero-filled sections: {}, data sections: {}",
-                img_idx,
-                img_piece.img_px.len(),
-                total_pixels_read,
-                total_pixels_expected,
-                if total_pixels_expected > 0 {
-                    (total_pixels_read as f64 / total_pixels_expected as f64) * 100.0
-                } else {
-                    0.0
-                },
-                zero_filled_sections,
-                data_filled_sections
-            );
             img_data.push(img_piece);
         } else {
             println!(
@@ -1100,8 +1046,6 @@ fn read_image_data(
             });
         }
     }
-
-    println!("  - Successfully loaded {} image pieces", img_data.len());
     Ok(img_data)
 }
 
@@ -1172,19 +1116,11 @@ fn read_meta_frames(
         ptr_meta_frames.push(ptr);
     }
 
-    println!("Decoded {} meta frame pointers", ptr_meta_frames.len());
-
     // Read meta frames
     let mut meta_frames = Vec::with_capacity(ptr_meta_frames.len());
     let buffer_size = reader.get_ref().len() as u64;
 
     for (frame_idx, &ptr_meta_frame) in ptr_meta_frames.iter().enumerate() {
-        // Log frame start and seek position
-        println!(
-            "Reading meta frame #{} - seeking to position 0x{:x}",
-            frame_idx, ptr_meta_frame
-        );
-
         // Use meta frame pointer directly
         match reader.seek(SeekFrom::Start(ptr_meta_frame as u64)) {
             Ok(_) => {},
@@ -1198,7 +1134,7 @@ fn read_meta_frames(
         let mut minus_frame_refs = 0;
 
         loop {
-            let current_piece_start_pos = reader.position(); // Position BEFORE reading img_index
+            let current_piece_start_pos = reader.position();
             
             // Read img_index with error handling
             let img_index = match read_i16_le(reader) {
@@ -1213,11 +1149,6 @@ fn read_meta_frames(
                 }
             };
             
-            println!(
-                "  Frame {}, Piece Start @ 0x{:x}, Read img_index: {} (0x{:04x})",
-                frame_idx, current_piece_start_pos, img_index, img_index as u16
-            );
-
             // Read other attributes with error handling
             let unk0 = match read_u16_le(reader) {
                 Ok(v) => v,
@@ -1255,41 +1186,17 @@ fn read_meta_frames(
                 }
             };
 
-            let current_piece_end_pos = reader.position(); // Position AFTER reading all piece data
+            let current_piece_end_pos = reader.position();
             let bytes_read_this_piece = current_piece_end_pos - current_piece_start_pos;
-            
-            println!(
-                "    Unk0: 0x{:04x}, Attr0: 0x{:04x}, Attr1: 0x{:04x}, Attr2: 0x{:04x}, End @ 0x{:x} (Read {} bytes)",
-                unk0, attr0, attr1, attr2, current_piece_end_pos, bytes_read_this_piece
-            );
 
             let is_last = (attr1 & super::flags::ATTR1_IS_LAST_MASK) != 0;
             
-            // Create the piece with the signed img_index value
             meta_frame_pieces.push(MetaFramePiece::new(img_index, attr0, attr1, attr2));
 
-            // Check piece size consistency
-            if bytes_read_this_piece != 10 {
-                println!(
-                    "    !!!! WARNING: Expected 10 bytes read for piece, got {} !!!!",
-                    bytes_read_this_piece
-                );
-            }
-
-            // Check if this is the last piece
             if is_last {
-                println!("    Found last piece marker in Attr1: 0x{:04x}", attr1);
                 break;
             }
         }
-
-        // Frame summary
-        println!(
-            "Frame #{} completed with {} pieces, {} MINUS_FRAME references", 
-            frame_idx, 
-            meta_frame_pieces.len(),
-            minus_frame_refs
-        );
 
         meta_frames.push(MetaFrame {
             pieces: meta_frame_pieces,
@@ -1305,8 +1212,6 @@ fn read_meta_frames(
             }
         }
     }
-    println!("Total MINUS_FRAME references found: {}", minus_frame_count);
-
     Ok(meta_frames)
 }
 
@@ -1489,11 +1394,6 @@ fn read_animation_groups(
     let mut anim_sequences: Vec<u32> = Vec::new();
     let buffer_size = reader.get_ref().len() as u64;
 
-    println!(
-        "Reading {} animation groups from {:#x}",
-        num_anim_groups, ptr_anim_group_table
-    );
-
     for group_idx in 0..num_anim_groups {
         let anim_loc = read_u32_le(reader).map_err(|e| WanError::Io(e))?;
         let anim_length = read_u16_le(reader).map_err(|e| WanError::Io(e))?;
@@ -1506,15 +1406,9 @@ fn read_animation_groups(
 
         // Skip empty groups
         if anim_loc == 0 || anim_length == 0 || anim_loc as u64 >= buffer_size {
-            println!("  - Group {}: Empty or invalid", group_idx);
             anim_groups.push(Vec::new());
             continue;
         }
-
-        println!(
-            "  - Group {}: {} animations at {:#x}",
-            group_idx, anim_length, anim_loc
-        );
 
         // Use animation location pointer directly - now correctly pointing to file position
         reader
@@ -1528,8 +1422,6 @@ fn read_animation_groups(
             let anim_ptr = read_u32_le(reader).map_err(|e| WanError::Io(e))?;
             anim_ptrs.push(anim_ptr);
             anim_sequences.push(anim_ptr);
-
-            println!("    - Direction {}: Animation at {:#x}", dir_idx, anim_ptr);
         }
 
         anim_groups.push(anim_ptrs);
@@ -1539,12 +1431,6 @@ fn read_animation_groups(
             .seek(SeekFrom::Start(current_pos))
             .map_err(|e| WanError::Io(e))?;
     }
-
-    println!(
-        "Read {} animation groups with {} total animations",
-        anim_groups.len(),
-        anim_sequences.len()
-    );
 
     Ok((anim_groups, anim_sequences))
 }
@@ -1556,24 +1442,12 @@ fn read_animation_sequences(
     _anim_sequences: &[u32], // We keep this parameter for API compatibility
 ) -> Result<Vec<Vec<Animation>>, WanError> {
     let buffer_size = reader.get_ref().len() as u64;
-
-    println!(
-        "Reading animation sequences from {} groups",
-        animation_groups.len()
-    );
-
     // Create the result array to match the animation group structure
     let mut result_animation_groups: Vec<Vec<Animation>> = 
         Vec::with_capacity(animation_groups.len());
 
     // Process each animation group
     for (group_idx, group) in animation_groups.iter().enumerate() {
-        println!(
-            "  Processing animation group {}: {} animations",
-            group_idx,
-            group.len()
-        );
-
         // Skip empty groups but preserve structure with empty Vec
         if group.is_empty() {
             result_animation_groups.push(Vec::new());
@@ -1590,15 +1464,9 @@ fn read_animation_sequences(
                 // Clone the previous animation
                 if !result_group.is_empty() {
                     result_group.push(result_group[dir_idx - 1].clone());
-                    println!("    Direction {}: Reusing previous animation", dir_idx);
                     continue;
                 }
             }
-
-            println!(
-                "    Reading animation at direction {} from address {:#x}",
-                dir_idx, ptr
-            );
 
             // Use animation sequence pointer directly
             if let Err(e) = reader.seek(SeekFrom::Start(ptr as u64)) {
@@ -1698,33 +1566,12 @@ fn read_animation_sequences(
                 frame_count += 1;
             }
 
-            println!("    Direction {}: Read {} frames", dir_idx, frame_count);
-
             // Add the animation to the group
             result_group.push(Animation::new(sequence_frames));
         }
 
         // Add the group to the result
         result_animation_groups.push(result_group.clone());
-        println!(
-            "  Group {} completed with {} animations",
-            group_idx,
-            result_group.len()
-        );
-    }
-
-    // Log detailed information about the animation groups
-    println!(
-        "Created {} animation groups:",
-        result_animation_groups.len()
-    );
-    for (i, group) in result_animation_groups.iter().enumerate() {
-        println!("  Group {}: {} animations", i, group.len());
-
-        // Log the number of frames in each animation (direction)
-        for (j, anim) in group.iter().enumerate() {
-            println!("    Direction {}: {} frames", j, anim.frames.len());
-        }
     }
 
     Ok(result_animation_groups)

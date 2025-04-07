@@ -47,8 +47,6 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
         // Handle MINUS_FRAME references - using SkyTemple's exact algorithm
         let actual_img_idx = if piece.img_index < 0 {
             minus_frame_pieces += 1;
-            println!("Processing MINUS_FRAME reference in piece {} with tile num {}", 
-                     piece_idx, piece.get_tile_num());
             
             // Get the target tile number to match
             let target_tile_num = piece.get_tile_num();
@@ -71,8 +69,6 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
                 
                 // Found a valid reference with matching tile number and valid img_index
                 reference_img_idx = Some(prev_piece.img_index as usize);
-                println!("  Found reference in piece {} with img_index {}", 
-                         prev_idx, prev_piece.img_index);
                 break;
             }
             
@@ -83,9 +79,7 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
                 },
                 None => {
                     failed_references += 1;
-                    println!("  WARNING: No reference found for MINUS_FRAME piece {} with tile num {}",
-                             piece_idx, piece.get_tile_num());
-                    continue;  // Skip this piece as we can't resolve its reference
+                    continue;
                 }
             }
         } else {
@@ -94,12 +88,6 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
 
         // Bounds check image index
         if actual_img_idx >= wan.img_data.len() {
-            println!(
-                "WARNING: Image index {} for piece {} out of bounds (max: {})",
-                actual_img_idx,
-                piece_idx,
-                wan.img_data.len() - 1
-            );
             continue;
         }
 
@@ -113,12 +101,6 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
         // Get palette
         let pal_num = piece.get_pal_num() as usize;
         if pal_num >= wan.custom_palette.len() {
-            println!(
-                "WARNING: Palette {} for piece {} out of bounds (max: {})",
-                pal_num,
-                piece_idx,
-                wan.custom_palette.len() - 1
-            );
             continue;
         }
 
@@ -145,11 +127,6 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
 
     // Print detailed summary for debugging
     let non_transparent_count = image.pixels().filter(|p| p[3] > 0).count();
-    println!(
-        "Frame {} summary: {} pieces total, {} rendered, {} MINUS_FRAME refs ({} resolved, {} failed), {} visible pixels",
-        frame_idx, total_pieces, rendered_pieces, minus_frame_pieces, 
-        resolved_references, failed_references, non_transparent_count
-    );
 
     Ok(image)
 }
@@ -229,9 +206,6 @@ fn render_frame(
         // Get the actual image index to use, resolving MINUS_FRAME references
         let actual_img_idx = if piece.img_index < 0 {
             minus_frame_pieces += 1;
-            // Using SkyTemple's exact algorithm for MINUS_FRAME resolution
-            println!("Processing MINUS_FRAME reference in piece {} with tile num {}", 
-                     piece_idx, piece.get_tile_num());
             
             // Get the target tile number to match
             let target_tile_num = piece.get_tile_num();
@@ -245,17 +219,12 @@ fn render_frame(
                 prev_idx -= 1;
                 let prev_piece = &frame.pieces[prev_idx];
                 
-                // CRITICAL CHANGE: Skip pieces that are EITHER:
-                // 1. MINUS_FRAME themselves OR
-                // 2. Don't have the matching tile number
                 if prev_piece.img_index < 0 || prev_piece.get_tile_num() != target_tile_num {
                     continue; // Skip this piece and continue searching
                 }
                 
                 // Found a valid reference
                 reference_img_idx = Some(prev_piece.img_index as usize);
-                println!("  Found reference in piece {} with img_index {}", 
-                         prev_idx, prev_piece.img_index);
                 break;
             }
             
@@ -266,9 +235,7 @@ fn render_frame(
                 },
                 None => {
                     failed_references += 1;
-                    println!("  WARNING: No reference found for MINUS_FRAME piece {} with tile num {}",
-                             piece_idx, piece.get_tile_num());
-                    continue; // Skip this piece as we can't resolve its reference
+                    continue;
                 }
             }
         } else {
@@ -324,13 +291,6 @@ fn render_frame(
             }
         }
     }
-
-    // Print a summary of the frame rendering for debugging
-    println!(
-        "Frame {} render summary: {} pieces total, {} rendered, {} MINUS_FRAME refs ({} resolved, {} failed)",
-        frame_idx, total_pieces, rendered_pieces, minus_frame_pieces, 
-        resolved_references, failed_references
-    );
 
     Ok(())
 }
@@ -498,10 +458,6 @@ fn render_piece(
 
     // If the texture is completely transparent, log and return early
     if !has_visible_pixels {
-        println!(
-            "WARNING: No visible pixels rendered for piece at index {}",
-            img_idx
-        );
         return Ok(());
     }
 

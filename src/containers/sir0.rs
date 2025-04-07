@@ -37,24 +37,13 @@ impl Sir0 {
         let pointer_offset_list_pointer =
             u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
 
-        println!(
-            "Reading SIR0: data_pointer=0x{:x}, pointer_list=0x{:x}",
-            data_pointer, pointer_offset_list_pointer
-        );
-
         // Decode pointer offsets
-        let pointer_offsets =
-            decode_sir0_pointer_offsets(data, pointer_offset_list_pointer);
+        let pointer_offsets = decode_sir0_pointer_offsets(data, pointer_offset_list_pointer);
 
         // Create a mutable copy of the data for pointer adjustment
         let mut data_copy = data.to_vec();
 
         // Adjust all pointers in the data by subtracting HEADER_LEN
-        // This is CRITICAL and matches exactly what SkyTemple does
-        println!(
-            "Adjusting {} pointers in SIR0 content",
-            pointer_offsets.len()
-        );
         for &offset in &pointer_offsets {
             if offset as usize + 4 <= data_copy.len() {
                 let ptr_value = u32::from_le_bytes([
@@ -81,11 +70,6 @@ impl Sir0 {
                 data_copy[offset as usize + 1] = adjusted_bytes[1];
                 data_copy[offset as usize + 2] = adjusted_bytes[2];
                 data_copy[offset as usize + 3] = adjusted_bytes[3];
-
-                println!(
-                    "Adjusted pointer at 0x{:x}: 0x{:x} -> 0x{:x}",
-                    offset, ptr_value, adjusted_ptr
-                );
             }
         }
 
@@ -117,11 +101,6 @@ impl Sir0 {
             );
             data_pointer
         };
-
-        println!(
-            "Adjusted data pointer: 0x{:x} -> 0x{:x}",
-            data_pointer, adjusted_data_pointer
-        );
 
         // Extract content data from data_copy
         let content_end = pointer_offset_list_pointer as usize;
@@ -177,11 +156,6 @@ pub fn decode_sir0_pointer_offsets(data: &[u8], pointer_offset_list_pointer: u32
 
     let mut pos = pointer_offset_list_pointer as usize;
 
-    println!(
-        "Decoding SIR0 pointer offsets from position 0x{:x}",
-        pointer_offset_list_pointer
-    );
-
     // Process until end of data or terminating zero
     while pos < data.len() {
         let cur_byte = data[pos];
@@ -205,18 +179,9 @@ pub fn decode_sir0_pointer_offsets(data: &[u8], pointer_offset_list_pointer: u32
             offset_sum += buffer;
             decoded.push(offset_sum);
 
-            if decoded.len() <= 10 || decoded.len() % 20 == 0 {
-                println!("  Decoded pointer offset 0x{:x}", offset_sum);
-            }
-
             buffer = 0;
         }
     }
-
-    println!(
-        "Successfully decoded {} SIR0 pointer offsets",
-        decoded.len()
-    );
     decoded
 }
 

@@ -36,15 +36,12 @@ fn main() {
     println!("ROM Path: {:?}", &rom_path);
     println!("Output Dir: {:?}", output_dir);
 
-    //let pokemon_ids = vec![1, 4, 6];
-    let pokemon_ids = vec![6];
-    let test_pokemon_id = 6;
+    let pokemon_ids = vec![1, 4, 6];
 
     // Create extractor instance
     match PokemonExtractor::new(rom_path) {
         Ok(extractor) => {
-            //if let Err(e) = extractor.extract_monster_data(Some(&pokemon_ids), &output_dir) {
-            if let Err(e) = extractor.process_monster_bin_only(test_pokemon_id, &output_dir) {
+            if let Err(e) = extractor.extract_monster_data(Some(&pokemon_ids), &output_dir) {
                 eprintln!("Error in focused test: {}", e);
             }
         }
