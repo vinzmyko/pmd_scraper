@@ -5,6 +5,7 @@
 
 // Declare submodules
 pub mod wan;
+pub mod atlas;
 
 // Re-export commonly used items for convenience
-pub use wan::{WanFile, WanType, parse_wan, extract_frame};
+pub use wan::WanType;

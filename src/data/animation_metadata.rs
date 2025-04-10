@@ -378,27 +378,6 @@ impl PokemonAnimationMetadata {
     pub fn get_animation_by_type(&self, anim_type: AnimationType) -> Option<&AnimationData> {
         self.animations.get(&(anim_type as u8))
     }
-
-    /// Map a group index to animation ID based on bin file
-    pub fn map_group_to_anim_id(bin_name: &str, group_idx: usize) -> Option<u8> {
-        match bin_name {
-            "monster.bin" => {
-                if group_idx < MONSTER_BIN_ANIMS.len() {
-                    Some(MONSTER_BIN_ANIMS[group_idx])
-                } else {
-                    None
-                }
-            }
-            "m_attack.bin" => {
-                if group_idx < M_ATTACK_BIN_ANIMS.len() {
-                    Some(M_ATTACK_BIN_ANIMS[group_idx])
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
 }
 
 /// Container for all Pokémon animation metadata

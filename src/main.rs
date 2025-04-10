@@ -36,7 +36,8 @@ fn main() {
     println!("ROM Path: {:?}", &rom_path);
     println!("Output Dir: {:?}", output_dir);
 
-    let pokemon_ids = vec![1, 4, 6];
+    //let pokemon_ids = vec![1, 4, 6];
+    let pokemon_ids = vec![1];
 
     // Create extractor instance
     match PokemonExtractor::new(rom_path) {

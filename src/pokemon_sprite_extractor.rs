@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::io::{Cursor, Seek, SeekFrom};
@@ -14,6 +15,9 @@ use crate::graphics::wan::renderer::extract_frame;
 use crate::graphics::wan::{parser, read_u16_le, WanFile};
 use crate::graphics::WanType;
 use crate::rom::read_header;
+
+// Import atlas functionality
+use crate::graphics::atlas::{create_pokemon_atlas, AtlasConfig, AtlasError, AtlasResult};
 
 /// Direction names in order
 const DIRECTIONS: &[&str] = &[
@@ -103,6 +107,8 @@ impl PokemonExtractor {
                 format!("Failed to parse monster.bin BIN_PACK: {}", e),
             )
         })?;
+
+        println!("Parsing m_attack.bin...");
         let m_attack_bin = BinPack::from_bytes(m_attack_bin_data).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -119,42 +125,83 @@ impl PokemonExtractor {
             None => (1..=10).collect(),
         };
 
+        // Create default atlas configuration
+        let atlas_config = AtlasConfig::default();
+
         // Process the selected Pokémon IDs
         for id in ids_to_process {
             if id < monster_md.len() {
                 let entry = &monster_md[id];
+
                 // Process sprite data for this Pokémon if sprite index is valid
                 let sprite_index = entry.sprite_index as usize;
                 if sprite_index < monster_bin.len() && sprite_index < m_attack_bin.len() {
-                    // Track if animation 11 has been processed already
-                    let mut processed_anim_11 = false;
+                    println!(
+                        "Processing Pokémon #{:03} (Sprite Index: {})",
+                        id, sprite_index
+                    );
 
-                    if let Err(e) = self.process_pokemon_sprite(
-                        &monster_bin,
-                        sprite_index,
-                        "monster.bin",
-                        &mut processed_anim_11,
-                        output_dir,
-                        id,
-                    ) {
-                        eprintln!(
-                            "Error processing monster.bin sprite for Pokémon {}: {}",
-                            id, e
-                        );
+                    // Collect WAN files from both sources
+                    let mut wan_files: HashMap<String, WanFile> = HashMap::new();
+
+                    // Process from monster.bin
+                    if let Ok(wan_file) =
+                        self.extract_wan_file(&monster_bin, sprite_index, "monster.bin")
+                    {
+                        wan_files.insert("monster.bin".to_string(), wan_file);
                     }
 
-                    if let Err(e) = self.process_pokemon_sprite(
-                        &m_attack_bin,
-                        sprite_index,
-                        "m_attack.bin",
-                        &mut processed_anim_11,
-                        output_dir,
-                        id,
-                    ) {
-                        eprintln!(
-                            "Error processing m_attack.bin sprite for Pokémon {}: {}",
-                            id, e
-                        );
+                    // Process from m_attack.bin
+                    if let Ok(wan_file) =
+                        self.extract_wan_file(&m_attack_bin, sprite_index, "m_attack.bin")
+                    {
+                        wan_files.insert("m_attack.bin".to_string(), wan_file);
+                    }
+
+                    // If we have valid WAN files, generate atlas
+                    if !wan_files.is_empty() {
+                        println!("Generating sprite atlas for Pokémon #{:03}...", id);
+
+                        // Use National Pokédex number from monster.md
+                        let dex_num = entry.national_pokedex_number;
+
+                        // Generate the atlas
+                        match create_pokemon_atlas(
+                            &wan_files,
+                            id,
+                            dex_num,
+                            &atlas_config,
+                            output_dir,
+                        ) {
+                            Ok(atlas_result) => {
+                                println!(
+                                    "Successfully generated atlas at: {}",
+                                    atlas_result.image_path.display()
+                                );
+                                println!(
+                                    "Metadata saved at: {}",
+                                    atlas_result.metadata_path.display()
+                                );
+                                println!(
+                                    "Atlas dimensions: {}x{}, Frame size: {}x{}",
+                                    atlas_result.dimensions.0,
+                                    atlas_result.dimensions.1,
+                                    atlas_result.frame_dimensions.0,
+                                    atlas_result.frame_dimensions.1
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("Error generating atlas for Pokémon #{:03}: {:?}", id, e);
+                            }
+                        }
+
+                        // Optionally, still extract individual frames for debugging
+                        if false {
+                            // Set to true if you want individual frames extracted
+                            self.extract_individual_frames(&wan_files, id, output_dir)?;
+                        }
+                    } else {
+                        println!("No valid WAN files found for Pokémon #{:03}", id);
                     }
                 } else {
                     println!(
@@ -175,20 +222,21 @@ impl PokemonExtractor {
             }
         }
 
+        println!(
+            "Processing complete! Found {} valid Pokémon sprites",
+            valid_sprites
+        );
+
         Ok(())
     }
 
-    /// Process an individual Pokémon sprite, handling decompression and parsing
-    /// Returns the set of animation IDs processed
-    fn process_pokemon_sprite(
+    /// Extract a WAN file from a bin file
+    fn extract_wan_file(
         &self,
         bin_pack: &BinPack,
         sprite_index: usize,
         bin_name: &str,
-        processed_anim_11: &mut bool,
-        output_dir: &Path,
-        pokemon_id: usize,
-    ) -> io::Result<()> {
+    ) -> io::Result<WanFile> {
         // Extract sprite data from BIN_PACK
         let sprite_data = &bin_pack[sprite_index];
 
@@ -196,162 +244,129 @@ impl PokemonExtractor {
         let decompressed_data = if sprite_data.starts_with(b"PKDPX") {
             self.decompress_pkdpx_data(sprite_data)?
         } else if sprite_data.starts_with(b"AT") {
-            let format_id = String::from_utf8_lossy(&sprite_data[0..5]);
-            return Ok(());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("AT format not supported for WAN extraction"),
+            ));
         } else {
             sprite_data.to_vec()
         };
 
         if decompressed_data.starts_with(b"SIR0") {
-            match self.parse_sir0_to_wan(&decompressed_data) {
-                Ok(wan_file) => {
-                    self.analyse_wan_file(&wan_file, bin_name, processed_anim_11);
-
-                    // Extract and save the sprite frames
-                    // wan, pokemon_id, sprite_index, bin_name
-                    if let Err(e) = self.extract_and_save_frames(
-                        &wan_file,
-                        pokemon_id,
-                        sprite_index,
-                        bin_name,
-                        output_dir,
-                        processed_anim_11,
-                    ) {
-                        println!("  - Error extracting frames: {}", e);
-                    }
-                }
-                Err(e) => {
-                    println!("  - Failed to parse SIR0 as WAN: {}", e);
-                }
-            }
+            self.parse_sir0_to_wan(&decompressed_data)
         } else {
-            println!("  - Decompressed data is not SIR0 format");
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Decompressed data is not SIR0 format",
+            ))
         }
-
-        Ok(())
     }
 
-    /// Extract and save frames from a WAN file
-    fn extract_and_save_frames(
+    /// Extract individual frames for all WAN files (for debugging or comparison)
+    fn extract_individual_frames(
         &self,
-        wan: &WanFile,
+        wan_files: &HashMap<String, WanFile>,
         pokemon_id: usize,
-        sprite_index: usize,
-        bin_name: &str,
         output_dir: &Path,
-        processed_anim_11: &mut bool,
     ) -> io::Result<()> {
+        println!(
+            "Extracting individual frames for Pokémon #{:03}...",
+            pokemon_id
+        );
+
         // Create pokemon directory
         let pokemon_dir = output_dir.join(format!("pokemon_{:03}", pokemon_id));
         fs::create_dir_all(&pokemon_dir)?;
 
-        // Process each animation group with its RAW index first
-        for (group_idx, anim_group) in wan.animation_groups.iter().enumerate() {
-            // Skip empty animation groups
-            if anim_group.is_empty() {
-                continue;
-            }
+        // Track processed animations to avoid duplicates (like animation 11)
+        let mut processed_animations = HashMap::new();
 
-            // Map the group index to a semantic animation ID - but ONLY for directory naming
-            let anim_id = match bin_name {
-                "monster.bin" => {
-                    // Check if this group index corresponds to a known animation
-                    if MONSTER_BIN_ANIMS.contains(&(group_idx as u8)) {
-                        group_idx as u8 // Use group_idx directly as the animation ID
-                    } else {
-                        group_idx as u8
-                    }
-                }
-                "m_attack.bin" => {
-                    // For m_attack.bin, similar direct mapping
-                    if M_ATTACK_BIN_ANIMS.contains(&(group_idx as u8)) {
-                        group_idx as u8 // Use group_idx directly as the animation ID
-                    } else {
-                        group_idx as u8
-                    }
-                }
-                _ => group_idx as u8,
-            };
-
-            // Skip animation 11 in m_attack.bin if it's already been processed
-            if anim_id == 11 && bin_name == "m_attack.bin" && *processed_anim_11 {
-                continue;
-            }
-
-            // If this is animation 11, mark it as processed
-            if anim_id == 11 {
-                *processed_anim_11 = true;
-            }
-
-            // Convert animation ID to type and name
-            let anim_type = AnimationType::from(anim_id);
-            let anim_name = anim_type.name();
-
-            // Create animation directory
-            let anim_dir = pokemon_dir.join(format!("anim_{:02}_{}", anim_id, anim_name));
-            fs::create_dir_all(&anim_dir)?;
-
-            // Sleep (ID 5) is single direction only
-            let single_direction = anim_id == 5;
-
-            // Process each direction
-            let direction_count = if single_direction {
-                1
-            } else {
-                anim_group.len().min(DIRECTIONS.len())
-            };
-
-            for dir_idx in 0..direction_count {
-                if dir_idx >= anim_group.len() {
+        // Process each WAN file
+        for (bin_name, wan) in wan_files {
+            // Process each animation group
+            for (group_idx, anim_group) in wan.animation_groups.iter().enumerate() {
+                // Skip empty animation groups
+                if anim_group.is_empty() {
                     continue;
                 }
 
-                let anim_seq = &anim_group[dir_idx];
-                let dir_name = DIRECTIONS[dir_idx];
+                // Map the group index to a semantic animation ID
+                let anim_id = match bin_name.as_str() {
+                    "monster.bin" => {
+                        if MONSTER_BIN_ANIMS.contains(&(group_idx as u8)) {
+                            group_idx as u8
+                        } else {
+                            continue; // Skip unknown animations
+                        }
+                    }
+                    "m_attack.bin" => {
+                        if M_ATTACK_BIN_ANIMS.contains(&(group_idx as u8)) {
+                            group_idx as u8
+                        } else {
+                            continue; // Skip unknown animations
+                        }
+                    }
+                    _ => continue, // Skip unknown bin files
+                };
 
-                // Create direction directory
-                let dir_dir = anim_dir.join(dir_name);
-                fs::create_dir_all(&dir_dir)?;
+                // Skip if we've already processed this animation
+                if processed_animations.contains_key(&anim_id) {
+                    continue;
+                }
+                processed_animations.insert(anim_id, true);
 
-                // Track successful and failed frames
-                let mut successful_frames = 0;
-                let mut empty_frames = 0;
-                let mut failed_frames = 0;
+                // Convert animation ID to type and name
+                let anim_type = AnimationType::from(anim_id);
+                let anim_name = anim_type.name();
 
-                // Process each frame with better error handling
-                for (frame_idx, anim_frame) in anim_seq.frames.iter().enumerate() {
-                    let frame_id = anim_frame.frame_index as usize;
+                // Create animation directory
+                let anim_dir = pokemon_dir.join(format!("anim_{:02}_{}", anim_id, anim_name));
+                fs::create_dir_all(&anim_dir)?;
 
-                    // Skip if frame doesn't exist
-                    if frame_id >= wan.frame_data.len() {
-                        println!("        - Invalid frame index {} - skipping", frame_id);
-                        failed_frames += 1;
+                // Sleep (ID 5) is single direction only
+                let single_direction = anim_id == 5;
+
+                // Process each direction
+                let direction_count = if single_direction {
+                    1
+                } else {
+                    anim_group.len().min(DIRECTIONS.len())
+                };
+
+                for dir_idx in 0..direction_count {
+                    if dir_idx >= anim_group.len() {
                         continue;
                     }
 
-                    // Extract the frame - using renderer
-                    match extract_frame(wan, frame_id) {
-                        Ok(frame_img) => {
-                            // Count non-transparent pixels for troubleshooting
-                            let non_transparent_count =
-                                frame_img.pixels().filter(|p| p[3] > 0).count();
+                    let anim_seq = &anim_group[dir_idx];
+                    let dir_name = DIRECTIONS[dir_idx];
 
-                            if non_transparent_count == 0 {
-                                empty_frames += 1;
-                            }
+                    // Create direction directory
+                    let dir_dir = anim_dir.join(dir_name);
+                    fs::create_dir_all(&dir_dir)?;
 
-                            // Save the raw frame directly
-                            let raw_path = dir_dir.join(format!("frame_{:02}_raw.png", frame_idx));
-                            if let Err(e) = frame_img.save(&raw_path) {
-                                println!("        - Error saving raw frame: {}", e);
-                                failed_frames += 1;
-                            } else {
-                                successful_frames += 1;
-                            }
+                    // Process each frame
+                    for (frame_idx, anim_frame) in anim_seq.frames.iter().enumerate() {
+                        let frame_id = anim_frame.frame_index as usize;
+
+                        // Skip if frame doesn't exist
+                        if frame_id >= wan.frame_data.len() {
+                            continue;
                         }
-                        Err(e) => {
-                            println!("        - Error extracting frame {}: {:?}", frame_id, e);
-                            failed_frames += 1;
+
+                        // Extract the frame
+                        match extract_frame(wan, frame_id) {
+                            Ok(frame_img) => {
+                                // Save the frame
+                                let frame_path =
+                                    dir_dir.join(format!("frame_{:02}.png", frame_idx));
+                                if let Err(e) = frame_img.save(&frame_path) {
+                                    println!("Error saving frame: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                println!("Error extracting frame {}: {:?}", frame_id, e);
+                            }
                         }
                     }
                 }
@@ -461,83 +476,6 @@ impl PokemonExtractor {
                 format!("Failed to parse WAN: {:?}", e),
             )
         })
-    }
-
-    /// Analyze a WAN file and print information about its contents
-    /// Takes a mutable reference to processed_anim_11 to track animation 11 processing
-    fn analyse_wan_file(&self, wan: &WanFile, bin_name: &str, processed_anim_11: &mut bool) {
-        // First print raw animation group structure
-        for (i, group) in wan.animation_groups.iter().enumerate() {
-            let group_size = group.len();
-            if group_size > 0 {
-                // Calculate total frames
-                let total_frames: usize = group.iter().map(|anim| anim.frames.len()).sum();
-            }
-        }
-
-        match bin_name {
-            "monster.bin" => {
-                for (group_idx, group) in wan.animation_groups.iter().enumerate() {
-                    if !group.is_empty() {
-                        // Use direct mapping: check if group_idx is a known animation ID
-                        let anim_id = if MONSTER_BIN_ANIMS.contains(&(group_idx as u8)) {
-                            group_idx as u8
-                        } else {
-                            255 // Unknown
-                        };
-
-                        // Skip animation 11 if we've already processed it and this is m_attack.bin
-                        if anim_id == 11 {
-                            *processed_anim_11 = true;
-                        }
-
-                        let anim_type = AnimationType::from(anim_id);
-                    }
-                }
-            }
-            "m_attack.bin" => {
-                for (group_idx, group) in wan.animation_groups.iter().enumerate() {
-                    if !group.is_empty() {
-                        let anim_id = if M_ATTACK_BIN_ANIMS.contains(&(group_idx as u8)) {
-                            group_idx as u8
-                        } else {
-                            255 // Unknown
-                        };
-
-                        if anim_id == 11 && *processed_anim_11 {
-                            continue;
-                        }
-
-                        if anim_id == 11 {
-                            *processed_anim_11 = true;
-                        }
-
-                        let anim_type = AnimationType::from(anim_id);
-                    }
-                }
-            }
-            _ => {
-                println!("    Unknown bin file: {}", bin_name);
-            }
-        }
-
-        // Analyze frame data for debugging
-        let mut empty_frames = 0;
-        let mut total_pieces = 0;
-        let mut minus_frame_refs = 0;
-
-        for (i, frame) in wan.frame_data.iter().enumerate() {
-            total_pieces += frame.pieces.len();
-            if frame.pieces.is_empty() {
-                empty_frames += 1;
-            }
-
-            for piece in &frame.pieces {
-                if piece.img_index < 0 {
-                    minus_frame_refs += 1;
-                }
-            }
-        }
     }
 }
 

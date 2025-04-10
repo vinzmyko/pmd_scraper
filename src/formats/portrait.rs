@@ -232,8 +232,9 @@ pub fn create_portrait_atlas(
     output_path: &PathBuf,
 ) -> Result<RgbaImage, String> {
     let width = 1280;
+    // Change this for later so we can fix it to use my other implementation
     let (columns, padded_height, max_portraits): (u32, u32, u32) = match atlas_type {
-        AtlasType::Pokedex => (32, 1024, 552), // Use of Power-of-Two padding for optimisation
+        AtlasType::Pokedex => (32, 1024, 552),
         AtlasType::Expressions => (32, 1024, 535),
     };
 
