@@ -229,24 +229,40 @@ pub const PORTRAIT_SIZE: u8 = 40;
 
 pub fn create_portrait_atlas(
     kao_file: &KaoFile,
-    atlas_type: AtlasType,
+    atlas_type: &AtlasType,
     output_path: &PathBuf,
 ) -> Result<RgbaImage, String> {
-    let width = 1280;
-    // Change this for later so we can fix it to use my other implementation
-    let (columns, padded_height, max_portraits): (u32, u32, u32) = match atlas_type {
-        AtlasType::Pokedex => (32, 1024, 552),
-        AtlasType::Expressions => (32, 1024, 535),
+    let max_portraits = match atlas_type {
+        AtlasType::Pokedex => 552,
+        AtlasType::Expressions => 535,
     };
 
-    let mut atlas = RgbaImage::new(width, padded_height);
+    // Count total portraits first - pass atlas_type by reference
+    let total_portrait_count = count_portraits(kao_file, atlas_type);
 
+    // Calculate optimal layout (same formula as WAN atlas code)
+    let frames_per_row = (total_portrait_count as f32).sqrt().ceil() as u32;
+    let rows = (total_portrait_count as u32 + frames_per_row - 1) / frames_per_row;
+
+    // Calculate dimensions (using PORTRAIT_SIZE constant)
+    let atlas_width = frames_per_row * PORTRAIT_SIZE as u32;
+    let atlas_height = rows * PORTRAIT_SIZE as u32;
+
+    println!(
+        "Creating atlas with optimal dimensions: {}x{} for {} portraits",
+        atlas_width, atlas_height, total_portrait_count
+    );
+
+    // Create optimally sized atlas
+    let mut atlas = RgbaImage::new(atlas_width, atlas_height);
+
+    // Initialize to transparent
     for pixel in atlas.pixels_mut() {
         *pixel = image::Rgba([0, 0, 0, 0]);
     }
 
-    let mut portrait_count = 0;
-
+    // Use a separate mutable counter for placement
+    let mut current_portrait_idx = 0;
     let mut portrait_metadata: HashMap<String, (usize, usize)> = HashMap::new();
 
     match atlas_type {
@@ -257,8 +273,8 @@ pub fn create_portrait_atlas(
                 }
 
                 if let Ok(Some(portrait)) = kao_file.get_portrait(pokemon_id as usize, 0) {
-                    let grid_x = portrait_count % columns;
-                    let grid_y = portrait_count / columns;
+                    let grid_x = current_portrait_idx % frames_per_row;
+                    let grid_y = current_portrait_idx / frames_per_row;
 
                     let x = grid_x * PORTRAIT_SIZE as u32;
                     let y = grid_y * PORTRAIT_SIZE as u32;
@@ -271,7 +287,7 @@ pub fn create_portrait_atlas(
                             (x as usize, y as usize),
                         );
 
-                        portrait_count += 1;
+                        current_portrait_idx += 1;
                     }
                 }
             }
@@ -297,8 +313,8 @@ pub fn create_portrait_atlas(
                     if let Ok(Some(portrait)) =
                         kao_file.get_portrait(pokemon_id as usize, emotion_index)
                     {
-                        let grid_x = portrait_count % columns;
-                        let grid_y = portrait_count / columns;
+                        let grid_x = current_portrait_idx % frames_per_row;
+                        let grid_y = current_portrait_idx / frames_per_row;
 
                         let x = grid_x * PORTRAIT_SIZE as u32;
                         let y = grid_y * PORTRAIT_SIZE as u32;
@@ -315,8 +331,9 @@ pub fn create_portrait_atlas(
                                 format!("mon_{:03}_{}", pokemon_id + 1, emotion_idx),
                                 (x as usize, y as usize),
                             );
+
                             emotion_idx += 1;
-                            portrait_count += 1;
+                            current_portrait_idx += 1;
                         }
                     }
                 }
@@ -344,12 +361,12 @@ pub fn create_portrait_atlas(
         .map_err(|e| format!("Failed to save atlas image: {}", e))?;
 
     // Then apply optimization
-    println!("Optimising PNG for smaller file size...");
+    println!("Optimizing PNG for smaller file size...");
     if let Err(e) = optimise_portrait_png(output_path, true) {
         println!("Warning: PNG optimization failed: {}", e);
         // We continue even if optimization fails
     } else {
-        println!("PNG optimisation complete");
+        println!("PNG optimization complete");
     }
 
     Ok(atlas)
@@ -413,4 +430,51 @@ fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), Strin
     }
 
     Ok(())
+}
+
+fn count_portraits(kao_file: &KaoFile, atlas_type: &AtlasType) -> usize {
+    let mut count = 0;
+    let max_portraits = match atlas_type {
+        AtlasType::Pokedex => 552,
+        AtlasType::Expressions => 535,
+    };
+
+    match atlas_type {
+        AtlasType::Pokedex => {
+            for pokemon_id in 0..max_portraits {
+                if pokemon_id > 535 && pokemon_id < 551 {
+                    continue;
+                }
+
+                if let Ok(Some(_)) = kao_file.get_portrait(pokemon_id as usize, 0) {
+                    count += 1;
+                }
+            }
+        }
+        AtlasType::Expressions => {
+            let emotion_indices = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 32, 34];
+            let ignore_portraits = [143, 144, 177, 415];
+
+            for pokemon_id in 0..max_portraits {
+                if ignore_portraits.contains(&pokemon_id) {
+                    continue;
+                }
+
+                for &emotion_index in &emotion_indices {
+                    if pokemon_id == 37
+                        || pokemon_id == 146
+                        || (pokemon_id == 64 && emotion_index > 4)
+                    {
+                        continue;
+                    }
+
+                    if let Ok(Some(_)) = kao_file.get_portrait(pokemon_id as usize, emotion_index) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    count
 }
