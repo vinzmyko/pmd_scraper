@@ -39,7 +39,7 @@ pub struct AtlasConfig {
     /// Whether to deduplicate identical frames in the final atlas
     pub deduplicate_frames: bool,
     /// Whether to optimize final PNG compression (lossless, can be slow)
-    pub optimize_compression: bool,
+    pub optimise_compression: bool,
     /// Enable saving of intermediate debug images and files
     pub debug: bool,
     pub use_indexed_colour: bool,
@@ -53,7 +53,7 @@ impl Default for AtlasConfig {
             min_frame_width: 32,
             min_frame_height: 32,
             deduplicate_frames: true,
-            optimize_compression: true,
+            optimise_compression: true,
             debug: true,
             use_indexed_colour: true,
             use_4bit_depth: true,
@@ -293,7 +293,7 @@ pub fn save_indexed_atlas(
 
     if config.use_4bit_depth {
         // Use oxipng to optimize the PNG with appropriate settings
-        let preset = if config.optimize_compression { 6 } else { 2 };
+        let preset = if config.optimise_compression { 6 } else { 2 };
 
         // Create options using presets (much simpler API)
         let mut options = oxipng::Options::from_preset(preset);

@@ -1,13 +1,14 @@
-use crate::containers::ContainerHandler;
 use crate::containers::compression::at4px::At4pxContainer;
+use crate::containers::ContainerHandler;
 use image::RgbaImage;
+use oxipng::{self, InFile, Options as OxiOptions, OutFile};
 use serde_json;
-use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::usize;
+use std::{collections::HashMap, path::Path};
 
 /// Represents a single portrait image from the KAO file
 #[derive(Clone, Debug)]
@@ -323,15 +324,32 @@ pub fn create_portrait_atlas(
         }
     }
 
+    // Save metadata
     let metadata_output_path = output_path.with_extension("json");
-
     match save_metadata(&portrait_metadata, &metadata_output_path) {
-        Ok(_data) => {
+        Ok(_) => {
             println!("Successfully saved portrait metadata");
         }
         Err(e) => {
             println!("Error saving metadata: {}", e);
         }
+    }
+
+    // Save the atlas image with optimization
+    println!("Saving atlas to {}...", output_path.display());
+
+    // First save the regular image
+    atlas
+        .save(output_path)
+        .map_err(|e| format!("Failed to save atlas image: {}", e))?;
+
+    // Then apply optimization
+    println!("Optimising PNG for smaller file size...");
+    if let Err(e) = optimise_portrait_png(output_path, true) {
+        println!("Warning: PNG optimization failed: {}", e);
+        // We continue even if optimization fails
+    } else {
+        println!("PNG optimisation complete");
     }
 
     Ok(atlas)
@@ -357,6 +375,42 @@ fn save_metadata(metadata: &HashMap<String, (usize, usize)>, path: &PathBuf) -> 
 
     file.write_all(json_string.as_bytes())
         .map_err(|e| format!("Failed to write to file: {}", e))?;
+
+    Ok(())
+}
+
+/// Optimizes a PNG file using oxipng for better compression
+fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), String> {
+    // Create a temporary path
+    let temp_path = path.with_extension("temp.png");
+
+    // If the file was already saved at this path, rename it to temp
+    if path.exists() {
+        std::fs::rename(path, &temp_path)
+            .map_err(|e| format!("Failed to prepare temp file: {}", e))?;
+    } else {
+        return Err("Image file not found at expected path".to_string());
+    }
+
+    // Set optimization level based on preference
+    let preset = if max_compression { 6 } else { 3 };
+    let mut options = oxipng::Options::from_preset(preset);
+
+    // Enable bit depth reduction - works well for portraits with limited colors
+    options.bit_depth_reduction = true;
+
+    // Optimize the PNG
+    oxipng::optimize(
+        &InFile::Path(temp_path.clone()),
+        &OutFile::Path(Some(path.to_path_buf())),
+        &options,
+    )
+    .map_err(|e| format!("PNG optimization failed: {}", e))?;
+
+    // Remove the temporary file
+    if let Err(e) = std::fs::remove_file(&temp_path) {
+        println!("  Warning: Failed to remove temporary file: {}", e);
+    }
 
     Ok(())
 }
