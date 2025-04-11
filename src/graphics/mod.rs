@@ -6,6 +6,7 @@
 // Declare submodules
 pub mod wan;
 pub mod atlas;
+pub mod portrait;
 
 // Re-export commonly used items for convenience
 pub use wan::WanType;
