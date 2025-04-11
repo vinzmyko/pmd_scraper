@@ -188,11 +188,6 @@ pub fn analyse_frames(
                     max_offset_up = max_offset_up.max(-offset_y_original_wan);
                     max_offset_down = max_offset_down.max(offset_y_original_wan);
 
-                    println!(
-                        "ANALYSIS: Pushing frame - AnimID: {}, DirIdx: {}, SeqIdx: {}, OrigWANIdx: {}, Source: {}",
-                        semantic_anim_id, dir_idx, sequence_idx, original_wan_frame_index, source_bin_name
-                    );
-
                     // Store the analysed frame data
                     ordered_frames.push((
                         semantic_anim_id,

@@ -200,9 +200,6 @@ pub fn generate_metadata(
                 single_direction: am_info.single_direction,
             });
 
-        println!("META: Processing OrigIdx={}, UniqueIdx={}, Anim={}, Dir={}, Seq={}, Duration={}",
-            original_global_index, unique_atlas_index_u32, *anim_id, *dir_idx, *sequence_idx, frame_info.duration);
-
         // Find or create the DirectionInfo
         let dir_output_info = match anim_output_info
             .directions
@@ -226,9 +223,6 @@ pub fn generate_metadata(
             }
         };
 
-        // Log BEFORE the check/push
-        println!("  DirInfo frames current len: {}, Expected SeqIdx: {}", dir_output_info.frames.len(), *sequence_idx);
-
         // Ensure frames are added in the correct sequence order
         if dir_output_info.frames.len() == *sequence_idx {
             dir_output_info.frames.push(frame_info);
@@ -241,9 +235,6 @@ pub fn generate_metadata(
             // As a fallback, just push. This might mess up animation order if the warning appears.
             dir_output_info.frames.push(frame_info);
         }
-
-        // Log AFTER push
-        println!("  DirInfo frames NEW len: {}", dir_output_info.frames.len());
     }
 
     Ok(AtlasMetadata {

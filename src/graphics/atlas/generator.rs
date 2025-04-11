@@ -32,11 +32,6 @@ pub fn prepare_frames(
 ) -> Result<Vec<RgbaImage>, super::AtlasError> {
     let mut prepared_frames = Vec::with_capacity(analysis.total_original_frames);
 
-    println!(
-        "DEBUG: Preparing frames with SMALL canvas size {}x{}",
-        frame_width, frame_height
-    );
-
     for (idx, (anim_id, dir_idx, sequence_idx, analysed_frame)) in
         analysis.ordered_frames.iter_mut().enumerate()
     {

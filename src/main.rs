@@ -3,8 +3,8 @@ mod data;
 mod filesystem;
 mod formats;
 mod graphics;
-mod pokemon_sprite_extractor;
 mod pokemon_portrait_extractor;
+mod pokemon_sprite_extractor;
 mod rom;
 
 use crate::graphics::portrait::KaoFile;
@@ -45,13 +45,16 @@ fn main() {
 
     println!("ROM Path: {:?}", &rom_path);
 
-    //let pokemon_ids = vec![1, 4, 6];
+    // For debugging
+    //let id_range = 199 ..= 250;
+    //let pokemon_ids: Vec<usize> = id_range.collect();
     let pokemon_ids = vec![1];
 
     match PokemonExtractor::new(&rom_path) {
         Ok(extractor) => {
             println!("Sprites Output Dir: {:?}", output_dir_sprites);
-            if let Err(e) = extractor.extract_monster_data(Some(&pokemon_ids), &output_dir) {
+            if let Err(e) = extractor.extract_monster_data(None, &output_dir_sprites)
+            {
                 eprintln!("Error in focused test: {}", e);
             }
         }
@@ -59,9 +62,8 @@ fn main() {
             eprintln!("Failed to open ROM file: {}", e);
         }
     }
-    
-        println!("Sprites Output Dir: {:?}", output_dir_sprites);
 
+    println!("Sprites Output Dir: {:?}", output_dir_sprites);
 
     match PortraitExtractor::new(&rom_path) {
         Ok(extractor) => {

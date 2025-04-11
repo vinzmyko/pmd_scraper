@@ -54,7 +54,7 @@ impl Default for AtlasConfig {
             min_frame_height: 32,
             deduplicate_frames: true,
             optimise_compression: true,
-            debug: true,
+            debug: false,
             use_indexed_colour: true,
             use_4bit_depth: true,
         }
@@ -148,8 +148,13 @@ pub fn create_pokemon_atlas(
         return Err(AtlasError::NoWanFilesProvided);
     }
 
-    // --- Preparation ---
-    let pokemon_name = format!("pokemon_{:03}_{:03}", pokemon_id, dex_num);
+    let pokemon_name = if pokemon_id as u16 == dex_num {
+        format!("pokemon_{:03}", dex_num)
+    } else {
+        let pokemon_form_num = pokemon_id as u16 - dex_num;
+        format!("pokemon_{:03}_{:02}", dex_num, pokemon_form_num)
+    };
+
     let pokemon_dir = output_dir.join(&pokemon_name);
     fs::create_dir_all(&pokemon_dir)?;
 
@@ -247,7 +252,7 @@ pub fn create_pokemon_atlas(
     println!("  Saving metadata to {}...", metadata_path.display());
     metadata::save_metadata(&metadata, &metadata_path)?;
 
-    // --- Optional: Save Debug Frames ---
+    // --- Save Debug Frames ---
     if config.debug {
         println!("  Saving debug frames...");
         let debug_dir = pokemon_dir.join("debug_unique_frames");

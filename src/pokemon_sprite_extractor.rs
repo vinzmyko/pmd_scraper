@@ -122,7 +122,12 @@ impl PokemonExtractor {
         // Determine which Pokémon IDs to process
         let ids_to_process = match pokemon_ids {
             Some(ids) => ids.to_vec(),
-            None => (1..=10).collect(),
+            None => {
+                // Process all valid entries from monster.md
+                println!("Processing all Pokémon found in monster.md...");
+                // Skip index 0 as it's usually not a valid Pokémon
+                (1..monster_md.len()).collect()
+            }
         };
 
         // Create default atlas configuration
@@ -132,83 +137,14 @@ impl PokemonExtractor {
         for id in ids_to_process {
             if id < monster_md.len() {
                 let entry = &monster_md[id];
-
-                // Process sprite data for this Pokémon if sprite index is valid
-                let sprite_index = entry.sprite_index as usize;
-                if sprite_index < monster_bin.len() && sprite_index < m_attack_bin.len() {
-                    println!(
-                        "Processing Pokémon #{:03} (Sprite Index: {})",
-                        id, sprite_index
-                    );
-
-                    // Collect WAN files from both sources
-                    let mut wan_files: HashMap<String, WanFile> = HashMap::new();
-
-                    // Process from monster.bin
-                    if let Ok(wan_file) =
-                        self.extract_wan_file(&monster_bin, sprite_index, "monster.bin")
-                    {
-                        wan_files.insert("monster.bin".to_string(), wan_file);
-                    }
-
-                    // Process from m_attack.bin
-                    if let Ok(wan_file) =
-                        self.extract_wan_file(&m_attack_bin, sprite_index, "m_attack.bin")
-                    {
-                        wan_files.insert("m_attack.bin".to_string(), wan_file);
-                    }
-
-                    // If we have valid WAN files, generate atlas
-                    if !wan_files.is_empty() {
-                        println!("Generating sprite atlas for Pokémon #{:03}...", id);
-
-                        // Use National Pokédex number from monster.md
-                        let dex_num = entry.national_pokedex_number;
-
-                        // Generate the atlas
-                        match create_pokemon_atlas(
-                            &wan_files,
-                            id,
-                            dex_num,
-                            &atlas_config,
-                            output_dir,
-                        ) {
-                            Ok(atlas_result) => {
-                                println!(
-                                    "Successfully generated atlas at: {}",
-                                    atlas_result.image_path.display()
-                                );
-                                println!(
-                                    "Metadata saved at: {}",
-                                    atlas_result.metadata_path.display()
-                                );
-                                println!(
-                                    "Atlas dimensions: {}x{}, Frame size: {}x{}",
-                                    atlas_result.dimensions.0,
-                                    atlas_result.dimensions.1,
-                                    atlas_result.frame_dimensions.0,
-                                    atlas_result.frame_dimensions.1
-                                );
-                            }
-                            Err(e) => {
-                                eprintln!("Error generating atlas for Pokémon #{:03}: {:?}", id, e);
-                            }
-                        }
-
-                        // Optionally, still extract individual frames for debugging
-                        if false {
-                            // Set to true if you want individual frames extracted
-                            self.extract_individual_frames(&wan_files, id, output_dir)?;
-                        }
-                    } else {
-                        println!("No valid WAN files found for Pokémon #{:03}", id);
-                    }
-                } else {
-                    println!(
-                        "  - Invalid sprite index {} (out of range for bin files)",
-                        entry.sprite_index
-                    );
-                }
+                self.process_pokemon(
+                    id,
+                    entry,
+                    &monster_bin,
+                    &m_attack_bin,
+                    &atlas_config,
+                    output_dir,
+                )?;
             } else {
                 println!("Pokémon ID {} is out of range", id);
             }
@@ -476,6 +412,87 @@ impl PokemonExtractor {
                 format!("Failed to parse WAN: {:?}", e),
             )
         })
+    }
+
+    /// Process a single Pokémon's sprite data
+    fn process_pokemon(
+        &self,
+        id: usize,
+        entry: &MonsterEntry,
+        monster_bin: &BinPack,
+        m_attack_bin: &BinPack,
+        atlas_config: &AtlasConfig,
+        output_dir: &Path,
+    ) -> io::Result<()> {
+        // Process sprite data for this Pokémon if sprite index is valid
+        let sprite_index = entry.sprite_index as usize;
+        if sprite_index < monster_bin.len() && sprite_index < m_attack_bin.len() {
+            println!(
+                "Processing Pokémon #{:03} (Sprite Index: {})",
+                id, sprite_index
+            );
+
+            // Collect WAN files from both sources
+            let mut wan_files: HashMap<String, WanFile> = HashMap::new();
+
+            // Process from monster.bin
+            if let Ok(wan_file) = self.extract_wan_file(monster_bin, sprite_index, "monster.bin") {
+                wan_files.insert("monster.bin".to_string(), wan_file);
+            }
+
+            // Process from m_attack.bin
+            if let Ok(wan_file) = self.extract_wan_file(m_attack_bin, sprite_index, "m_attack.bin")
+            {
+                wan_files.insert("m_attack.bin".to_string(), wan_file);
+            }
+
+            // If we have valid WAN files, generate atlas
+            if !wan_files.is_empty() {
+                println!("Generating sprite atlas for Pokémon #{:03}...", id);
+
+                // Use National Pokédex number from monster.md
+                let dex_num = entry.national_pokedex_number;
+
+                // Generate the atlas
+                match create_pokemon_atlas(&wan_files, id, dex_num, atlas_config, output_dir) {
+                    Ok(atlas_result) => {
+                        println!(
+                            "Successfully generated atlas at: {}",
+                            atlas_result.image_path.display()
+                        );
+                        println!(
+                            "Metadata saved at: {}",
+                            atlas_result.metadata_path.display()
+                        );
+                        println!(
+                            "Atlas dimensions: {}x{}, Frame size: {}x{}",
+                            atlas_result.dimensions.0,
+                            atlas_result.dimensions.1,
+                            atlas_result.frame_dimensions.0,
+                            atlas_result.frame_dimensions.1
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("Error generating atlas for Pokémon #{:03}: {:?}", id, e);
+                    }
+                }
+
+                // Optionally, still extract individual frames for debugging
+                if false {
+                    // Set to true if you want individual frames extracted
+                    self.extract_individual_frames(&wan_files, id, output_dir)?;
+                }
+            } else {
+                println!("No valid WAN files found for Pokémon #{:03}", id);
+            }
+        } else {
+            println!(
+                "  - Invalid sprite index {} (out of range for bin files)",
+                entry.sprite_index
+            );
+        }
+
+        Ok(())
     }
 }
 
