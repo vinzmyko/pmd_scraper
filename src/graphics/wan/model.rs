@@ -132,7 +132,7 @@ pub struct FrameOffset {
     /// Right hand position (x, y)
     pub rhand: (i16, i16),
     
-    /// Center position (x, y)
+    /// Centre position (x, y)
     pub centre: (i16, i16),
 }
 

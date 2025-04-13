@@ -16,7 +16,7 @@ use serde_json;
 /// Represents a single portrait image from the KAO file
 #[derive(Clone, Debug)]
 pub struct Portrait {
-    palette: Vec<[u8; 3]>,    // RGB colors
+    palette: Vec<[u8; 3]>,    // RGB colours
     compressed_data: Vec<u8>, // AT4PX compressed data
     _original_size: usize,
 }
@@ -77,8 +77,8 @@ impl Portrait {
         for byte_idx in 0..(pixel_count / 2) {
             let byte = decompressed[byte_idx];
 
-            let color_idx1 = byte & 0xF; // Low nibble
-            let color_idx2 = (byte >> 4) & 0xF; // High nibble
+            let colour_idx1 = byte & 0xF; // Low nibble
+            let colour_idx2 = (byte >> 4) & 0xF; // High nibble
 
             for i in 0..2 {
                 let idx = byte_idx * 2 + i;
@@ -105,21 +105,21 @@ impl Portrait {
                     continue; // Protect against out-of-bounds
                 }
 
-                // Get color index based on which nibble we're processing
-                let color_idx = if i == 0 { color_idx1 } else { color_idx2 } as usize;
+                // Get colour index based on which nibble we're processing
+                let colour_idx = if i == 0 { colour_idx1 } else {colour_idx2 } as usize;
 
-                if color_idx >= self.palette.len() {
+                if colour_idx >= self.palette.len() {
                     continue; // Protect against out-of-bounds
                 }
 
                 // Calculate position in the RGBA buffer, 4 bytes per pixel
                 let buffer_pos = ((final_y * IMG_DIM + final_x) * 4) as usize;
 
-                // Copy color data to buffer
-                let color = &self.palette[color_idx];
-                image_buffer[buffer_pos] = color[0];
-                image_buffer[buffer_pos + 1] = color[1];
-                image_buffer[buffer_pos + 2] = color[2];
+                // Copy colour data to buffer
+                let colour = &self.palette[colour_idx];
+                image_buffer[buffer_pos] = colour[0];
+                image_buffer[buffer_pos + 1] = colour[1];
+                image_buffer[buffer_pos + 2] = colour[2];
                 image_buffer[buffer_pos + 3] = 255; // Alpha
             }
         }

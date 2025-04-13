@@ -158,7 +158,7 @@ pub fn generate_metadata(
         let head_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.head));
         let lhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.lhand));
         let rhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.rhand));
-        let center_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.centre));
+        let centre_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.centre));
 
         // Create FrameInfo
         let frame_info = FrameInfo {
@@ -176,7 +176,7 @@ pub fn generate_metadata(
             head_pos: head_pos_rel,
             lhand_pos: lhand_pos_rel,
             rhand_pos: rhand_pos_rel,
-            centre_pos: center_pos_rel,
+            centre_pos: centre_pos_rel,
         };
 
         // Add FrameInfo to the Correct Animation/Direction 

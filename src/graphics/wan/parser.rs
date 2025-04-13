@@ -161,9 +161,9 @@ pub fn parse_character_wan(
         )));
     }
 
-    // Skip unknown values Unk#13, Is256ColorSpr, Unk#11
+    // Skip unknown values Unk#13, Is256ColourSpr, Unk#11
     read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#13 - ALWAYS 0
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Is256ColorSpr - ALWAYS 0
+    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Is256ColourSpr - ALWAYS 0
     read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#11 - ALWAYS 1 unless empty
 
     // Read number of images
@@ -184,7 +184,7 @@ pub fn parse_character_wan(
         )));
     }
 
-    // Skip unknown values (Unk#3, nbColorsPerRow, Unk#4, Unk#5)
+    // Skip unknown values (Unk#3, colours_per_row, Unk#4, Unk#5)
     read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#3 - ALWAYS 0
     let _colours_per_row_num = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
     read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#4 - ALWAYS 0
@@ -1176,14 +1176,14 @@ fn read_offset_data(
         let rhand_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
         let rhand_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
 
-        let center_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
-        let center_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let centre_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let centre_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
 
         offset_data.push(FrameOffset::new(
             (head_x, head_y),
             (lhand_x, lhand_y),
             (rhand_x, rhand_y),
-            (center_x, center_y),
+            (centre_x, centre_y),
         ));
     }
 
