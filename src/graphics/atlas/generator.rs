@@ -3,12 +3,14 @@
 //! Handles layout calculation, frame positioning, deduplication,
 //! and final atlas image creation.
 
-use crate::graphics::atlas::analyser::{round_up_to_multiple_of_8, AnalysedFrame, FrameAnalysis};
-use image::{imageops, GenericImageView, ImageBuffer, Rgba, RgbaImage};
-use std::collections::HashMap;
+use crate::graphics::atlas::analyser::FrameAnalysis;
 
-use std::collections::hash_map::Entry;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    hash::{Hash, Hasher},
+};
+
+use image::{imageops, RgbaImage};
 use twox_hash::XxHash64;
 
 #[derive(Debug, Clone)]
@@ -23,7 +25,7 @@ pub struct AtlasLayout {
 ///
 /// This involves creating a canvas of the final `frame_width` x `frame_height`
 /// for each frame and positioning the actual sprite content within it,
-/// centered around the standard reference point and adjusted by the
+/// centred around the standard reference point and adjusted by the
 /// original animation offsets.
 pub fn prepare_frames(
     analysis: &mut FrameAnalysis, // Changed to mutable
@@ -32,14 +34,14 @@ pub fn prepare_frames(
 ) -> Result<Vec<RgbaImage>, super::AtlasError> {
     let mut prepared_frames = Vec::with_capacity(analysis.total_original_frames);
 
-    for (idx, (anim_id, dir_idx, sequence_idx, analysed_frame)) in
+    for (_idx, (_anim_id, _dir_idx, _sequence_idx, analysed_frame)) in
         analysis.ordered_frames.iter_mut().enumerate()
     {
         let mut final_frame_canvas = RgbaImage::new(frame_width, frame_height);
         let (content_width, content_height) = analysed_frame.image.dimensions();
 
         if content_width == 0 || content_height == 0 {
-            analysed_frame.final_placement_x = 0; // Or center of empty canvas?
+            analysed_frame.final_placement_x = 0;
             analysed_frame.final_placement_y = 0;
             prepared_frames.push(final_frame_canvas);
             continue;
@@ -53,7 +55,7 @@ pub fn prepare_frames(
         analysed_frame.final_placement_x = final_pos_x;
         analysed_frame.final_placement_y = final_pos_y;
 
-        // Overlay the (cropped) content image onto the canvas using the corrected position
+        // Overlay the  content image onto the canvas using the corrected position
         overlay_image(
             &mut final_frame_canvas,
             &analysed_frame.image,
@@ -69,20 +71,20 @@ pub fn prepare_frames(
 
 /// Creates an atlas layout grid based on the number of frames and frame size.
 pub fn create_atlas_layout(
-    total_unique_frames: usize, // Use count of unique frames
+    total_unique_frames: usize,
     frame_width: u32,
     frame_height: u32,
 ) -> AtlasLayout {
     if total_unique_frames == 0 {
         return AtlasLayout {
-            dimensions: (frame_width.max(8), frame_height.max(8)), // Minimum size
+            dimensions: (frame_width.max(8), frame_height.max(8)),
             frames_per_row: 1,
             rows: 1,
             frame_size: (frame_width, frame_height),
         };
     }
 
-    // Calculate a near-square grid layout (slightly wider than tall is often good for textures)
+    // Calculate a near-square grid layout
     let frames_per_row = (total_unique_frames as f32).sqrt().ceil() as u32;
     let rows = (total_unique_frames as u32 + frames_per_row - 1) / frames_per_row;
 
@@ -109,7 +111,6 @@ pub fn generate_atlas(
     let (atlas_width, atlas_height) = layout.dimensions;
     let (frame_width, frame_height) = layout.frame_size;
 
-    // Create atlas image with transparent background
     let mut atlas = RgbaImage::new(atlas_width, atlas_height);
 
     // Place unique frames onto the atlas
@@ -132,14 +133,13 @@ pub fn generate_atlas(
         let x = atlas_col * frame_width;
         let y = atlas_row * frame_height;
 
-        // Copy frame to atlas
         overlay_image(&mut atlas, frame, x as i32, y as i32);
     }
 
     Ok(atlas)
 }
 
-/// Deduplicates frames by comparing pixel data using fast hashing.
+/// Deduplicates frames by comparing pixel data using xxHash
 ///
 /// Returns a tuple: `(Vec<RgbaImage>, Vec<usize>)` where the first element
 /// is the vector of unique frames, and the second is a mapping vector where
@@ -150,13 +150,12 @@ pub fn deduplicate_frames(frames: &[RgbaImage]) -> (Vec<RgbaImage>, Vec<usize>) 
     let mut frame_mapping = Vec::with_capacity(frames.len());
 
     for frame in frames {
-        // Calculate hash instead of storing entire frame bytes
         let frame_hash = calculate_frame_hash(frame);
 
         let unique_index = match unique_frames_map.entry(frame_hash) {
             Entry::Occupied(entry) => {
                 let candidate_idx = *entry.get();
-                // Verify to handle hash collisions (rare but possible)
+                // Verify to handle hash collisions
                 if frames_are_identical(frame, &unique_frames_vec[candidate_idx]) {
                     candidate_idx
                 } else {
@@ -198,58 +197,6 @@ fn frames_are_identical(a: &RgbaImage, b: &RgbaImage) -> bool {
 }
 
 /// Overlays a smaller image onto a larger canvas image at specified coordinates.
-/// Respects alpha transparency.
 fn overlay_image(canvas: &mut RgbaImage, image: &RgbaImage, x: i32, y: i32) {
     imageops::overlay(canvas, image, x as i64, y as i64);
-}
-
-// --- Helper Drawing Functions ---
-
-fn draw_rect(img: &mut RgbaImage, x1: u32, y1: u32, x2: u32, y2: u32, color: Rgba<u8>) {
-    draw_line_horizontal(img, x1, x2, y1, color);
-    draw_line_horizontal(img, x1, x2, y2, color);
-    draw_line_vertical(img, x1, y1, y2, color);
-    draw_line_vertical(img, x2, y1, y2, color);
-}
-
-fn draw_line_horizontal(img: &mut RgbaImage, x1: u32, x2: u32, y: u32, color: Rgba<u8>) {
-    let width = img.width();
-    if y >= img.height() {
-        return;
-    }
-    for x in x1.min(x2)..=x1.max(x2) {
-        if x < width {
-            img.put_pixel(x, y, color);
-        }
-    }
-}
-
-fn draw_line_vertical(img: &mut RgbaImage, x: u32, y1: u32, y2: u32, color: Rgba<u8>) {
-    let height = img.height();
-    if x >= img.width() {
-        return;
-    }
-    for y in y1.min(y2)..=y1.max(y2) {
-        if y < height {
-            img.put_pixel(x, y, color);
-        }
-    }
-}
-
-fn draw_circle(img: &mut RgbaImage, cx: u32, cy: u32, radius: u32, color: Rgba<u8>) {
-    let width = img.width();
-    let height = img.height();
-    let r_sq = (radius * radius) as i32;
-
-    for y_offset in -(radius as i32)..=(radius as i32) {
-        for x_offset in -(radius as i32)..=(radius as i32) {
-            if x_offset * x_offset + y_offset * y_offset <= r_sq {
-                let x = cx as i32 + x_offset;
-                let y = cy as i32 + y_offset;
-                if x >= 0 && y >= 0 && (x as u32) < width && (y as u32) < height {
-                    img.put_pixel(x as u32, y as u32, color);
-                }
-            }
-        }
-    }
 }

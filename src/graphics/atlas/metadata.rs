@@ -3,59 +3,57 @@
 //! Creates a JSON file describing the atlas layout, animations,
 //! directions, and frame properties.
 
-use super::analyser::{AnalysedFrame, FrameAnalysis};
-use super::generator::AtlasLayout;
-use crate::data::animation_metadata as AmData; // Alias
-use crate::graphics::wan::WanFile;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, Write};
-use std::path::Path;
+use crate::{
+    data::animation_metadata as AmData,
+    graphics::{
+        wan::WanFile,
+        atlas::{
+            analyser::FrameAnalysis,
+            generator::AtlasLayout,
+        },
+    },
+};
 
-// --- Metadata Struct Definitions ---
+use std::{
+    collections::HashMap,
+    fs::File,
+    path::Path
+};
+
+use serde::{Deserialize, Serialize};
+
+const SINGLE_DIRECTION_ANIMATIONS: &[u8] = &[5];
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AtlasMetadata {
     /// Filename of the atlas PNG image this metadata corresponds to.
     pub atlas_image: String,
-    /// Width of each individual frame cell in the atlas.
     pub frame_width: u32,
-    /// Height of each individual frame cell in the atlas.
     pub frame_height: u32,
-    /// Total number of unique frames present in the atlas image.
-    pub total_frames_in_atlas: u32, // Renamed for clarity
-    /// Shadow size category (0=small, 1=medium, 2=large).
+    pub total_frames_in_atlas: u32,
     pub shadow_size: u8,
-    /// Animation data, keyed by semantic animation name (e.g., "Walk", "Attack").
-    pub animations: HashMap<String, AnimationInfo>,
+    pub animations: HashMap<String, AtlasAnimationInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AnimationInfo {
-    /// The semantic Animation ID (e.g., 0 for Walk, 1 for Attack).
+pub struct AtlasAnimationInfo {
     pub anim_id: u8,
-    /// The semantic name of the animation (e.g., "Walk").
     pub name: String,
-    /// The original source bin file ("monster", "m_attack").
     pub source_bin: String,
-    /// List of directions available for this animation.
     pub directions: Vec<DirectionInfo>,
-    /// True if this animation only uses the 'down' direction (e.g., Sleep).
+    /// Only used for Sleep animation group
     pub single_direction: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DirectionInfo {
-    /// Direction index (0=down, 1=down-right, ..., 7=down-left).
     pub direction: u8,
-    /// Sequence of frames for this direction.
     pub frames: Vec<FrameInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FrameInfo {
-    /// Index of this frame within the **unique frames** of the atlas sheet.
+    /// Index of this frame within the unique frames of the atlas sheet.
     pub idx: u32,
     /// Top-left X coordinate of this frame's cell in the atlas sheet (in pixels).
     pub sheet_x: u32,
@@ -66,21 +64,19 @@ pub struct FrameInfo {
     /// X offset to apply when drawing, relative to the standard reference point (feet).
     pub offset_x: i32,
     /// Y offset to apply when drawing, relative to the standard reference point (feet).
-    /// Positive values typically mean move UP in engine coordinate systems.
     pub offset_y: i32,
     /// X offset for placing the shadow sprite, relative to the standard reference point.
     pub shadow_offset_x: i32,
     /// Y offset for placing the shadow sprite, relative to the standard reference point.
     pub shadow_offset_y: i32,
-    /// Optional head position relative to the frame cell's top-left (0,0).
+    /// Head position relative to the frame cell's top-left (0,0).
     pub head_pos: Option<[i32; 2]>,
-    /// Optional left hand position relative to the frame cell's top-left (0,0).
+    /// Left hand position relative to the frame cell's top-left (0,0).
     pub lhand_pos: Option<[i32; 2]>,
-    /// Optional right hand position relative to the frame cell's top-left (0,0).
+    /// Right hand position relative to the frame cell's top-left (0,0).
     pub rhand_pos: Option<[i32; 2]>,
-    /// Optional center position relative to the frame cell's top-left (0,0).
-    pub center_pos: Option<[i32; 2]>,
-    /// True if damage calculation should occur on this frame.
+    /// Centre position relative to the frame cell's top-left (0,0).
+    pub centre_pos: Option<[i32; 2]>,
     pub is_hit_frame: bool,
     /// True if the animation should return to idle after this frame.
     pub is_return_frame: bool,
@@ -88,26 +84,24 @@ pub struct FrameInfo {
     pub is_rush_frame: bool,
 }
 
-// --- Metadata Generation Function ---
-
 /// Generates the complete AtlasMetadata structure.
 pub fn generate_metadata(
-    wan_files: &HashMap<String, WanFile>, // Needed to get original SequenceFrame/OffsetData
-    analysis: &FrameAnalysis,             // Contains AnalysedFrame data in order
+    wan_files: &HashMap<String, WanFile>,
+    analysis: &FrameAnalysis,
     frame_width: u32,
     frame_height: u32,
     layout: &AtlasLayout,
-    frame_mapping: &[usize], // Maps original_index -> unique_atlas_index
+    frame_mapping: &[usize],
     shadow_size: u8,
 ) -> Result<AtlasMetadata, super::AtlasError> {
-    let mut output_animations: HashMap<String, AnimationInfo> = HashMap::new();
+    let mut output_animations: HashMap<String, AtlasAnimationInfo> = HashMap::new();
     let total_unique_frames = frame_mapping.iter().max().map_or(0, |&max_idx| max_idx + 1);
 
-    // Iterate through the original frame sequence preserved in analysis.ordered_frames
+    // Iterate through the original frame sequence
     for (original_global_index, (anim_id, dir_idx, sequence_idx, analysed_frame)) in
         analysis.ordered_frames.iter().enumerate()
     {
-        // --- 1. Get Info about the Unique Frame in the Atlas ---
+        // Get Info about the Unique Frame in the Atlas 
         let unique_atlas_index = frame_mapping[original_global_index];
         let unique_atlas_index_u32 = unique_atlas_index as u32;
 
@@ -117,7 +111,7 @@ pub fn generate_metadata(
         let sheet_x = atlas_col * frame_width;
         let sheet_y = atlas_row * frame_height;
 
-        // --- 2. Get Original Data for this specific frame in sequence ---
+        //  Get Original Data for this specific frame in sequence
         let am_info = AmData::AnimationInfo::find_by_id(*anim_id).ok_or_else(|| {
             super::AtlasError::MetadataError(format!("Unknown anim_id {}", *anim_id))
         })?;
@@ -129,10 +123,9 @@ pub fn generate_metadata(
             ))
         })?;
 
-        // Retrieve the original SequenceFrame
         let original_seq_frame = wan_file
             .animation_groups
-            .get(analysed_frame.group_idx) // Use group_idx directly
+            .get(analysed_frame.group_idx)
             .and_then(|group| group.get(*dir_idx as usize))
             .and_then(|dir_anim| dir_anim.frames.get(*sequence_idx))
             .ok_or_else(|| {
@@ -142,15 +135,12 @@ pub fn generate_metadata(
                 ))
             })?;
 
-        // Retrieve original body part offsets (optional)
+        // Retrieve original body part offsets
         let frame_offset_data = wan_file
-            .offset_data
+            .body_part_offset_data
             .get(analysed_frame.original_wan_frame_index);
 
-        // --- 3. UPDATED: Calculate body part positions RELATIVE TO REFERENCE POINT ---
-        // For tight frames, we calculate relative to the original reference point
-        // instead of adjusting to frame top-left position
-
+        // Calculate body part positions
         // Ref point calculated during analysis relative to original uncropped frame
         let original_ref_x = analysed_frame.ref_offset_x;
         let original_ref_y = analysed_frame.ref_offset_y;
@@ -168,9 +158,9 @@ pub fn generate_metadata(
         let head_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.head));
         let lhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.lhand));
         let rhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.rhand));
-        let center_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.center));
+        let center_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.centre));
 
-        // --- 4. Create FrameInfo (keeping the same field names) ---
+        // Create FrameInfo
         let frame_info = FrameInfo {
             idx: unique_atlas_index_u32,
             sheet_x,
@@ -186,18 +176,18 @@ pub fn generate_metadata(
             head_pos: head_pos_rel,
             lhand_pos: lhand_pos_rel,
             rhand_pos: rhand_pos_rel,
-            center_pos: center_pos_rel,
+            centre_pos: center_pos_rel,
         };
 
-        // --- 5. Add FrameInfo to the Correct Animation/Direction ---
+        // Add FrameInfo to the Correct Animation/Direction 
         let anim_output_info = output_animations
             .entry(am_info.name.to_string())
-            .or_insert_with(|| AnimationInfo {
+            .or_insert_with(|| AtlasAnimationInfo {
                 anim_id: *anim_id,
                 name: am_info.name.to_string(),
                 source_bin: analysed_frame.source_bin.clone(),
                 directions: Vec::new(),
-                single_direction: am_info.single_direction,
+                single_direction: SINGLE_DIRECTION_ANIMATIONS.contains(anim_id),
             });
 
         // Find or create the DirectionInfo
@@ -210,7 +200,7 @@ pub fn generate_metadata(
             None => {
                 anim_output_info.directions.push(DirectionInfo {
                     direction: *dir_idx,
-                    frames: Vec::with_capacity(original_seq_frame.duration as usize), // Pre-allocate roughly
+                    frames: Vec::with_capacity(original_seq_frame.duration as usize),
                 });
                 // Sort directions after adding a new one for consistent output order
                 anim_output_info.directions.sort_by_key(|d| d.direction);
@@ -250,7 +240,6 @@ pub fn generate_metadata(
 /// Saves the generated AtlasMetadata to a JSON file.
 pub fn save_metadata(metadata: &AtlasMetadata, path: &Path) -> Result<(), super::AtlasError> {
     let file = File::create(path)?;
-    // Use serde_json::to_writer_pretty for readable output
     serde_json::to_writer_pretty(file, metadata)?;
     Ok(())
 }

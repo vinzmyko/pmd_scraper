@@ -10,10 +10,9 @@ const PX_MIN_MATCH_SEQLEN: usize = 3;
 const PX_LOOKBACK_BUFFER_SIZE: usize = 4096; // 0x1000
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct PkdpxContainer {
     pub _magic: [u8; 5],
-    pub length_compressed: u16,
+    pub _length_compressed: u16,
     pub compression_flags: [u8; 9],
     pub length_decompressed: u32,
     pub compressed_data: Vec<u8>,
@@ -59,7 +58,7 @@ impl ContainerHandler for PkdpxContainer {
 
         Ok(Box::new(PkdpxContainer {
             _magic: magic,
-            length_compressed,
+            _length_compressed: length_compressed,
             compression_flags,
             length_decompressed,
             compressed_data,
@@ -78,10 +77,6 @@ impl CompressionContainer for PkdpxContainer {
         // Current position in the compressed data
         let mut data_pos = 0;
 
-        // Define the critical offset for detailed logging
-        let critical_offset: usize = 0xB0;
-        let critical_region_size: usize = 32; // Log detailed info within this many bytes of critical offset
-
         // Main decompression loop
         while data_pos < self.compressed_data.len() {
             // Read control byte that determines how to interpret the next 8 operations
@@ -95,7 +90,6 @@ impl CompressionContainer for PkdpxContainer {
                 }
 
                 let is_literal = (control_byte & bit_masks[bit]) != 0;
-                let current_output_pos = decompressed.len();
 
                 if is_literal {
                     let literal_byte = self.compressed_data[data_pos];
@@ -161,10 +155,9 @@ impl CompressionContainer for PkdpxContainer {
                         // Copy bytes from earlier in the output
                         for i in 0..copy_len {
                             // Use modulo to handle repeating patterns
-                            // (if the sequence to copy is shorter than copy_len)
                             let src_index = start_pos + (i % back_offset);
 
-                            // Bounds check for absolute safety
+                            // Bounds check
                             if src_index >= decompressed.len() {
                                 return Err(format!(
                                     "Invalid source index: {} >= {}",
@@ -178,25 +171,9 @@ impl CompressionContainer for PkdpxContainer {
                         }
                     }
                 }
-
-                // Check if we just wrote through the critical byte
-                if current_output_pos <= critical_offset && decompressed.len() > critical_offset {
-                    let start = critical_offset.saturating_sub(8);
-                    let end = (critical_offset + 8).min(decompressed.len());
-                    let bytes_str = decompressed[start..end]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &b)| {
-                            let pos = start + i;
-                            let highlight = if pos == critical_offset { "*" } else { " " };
-                            format!("{}{:02x}", highlight, b)
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                }
             }
 
-            // Safety check: break if we've reached expected length
+            // break if we've reached expected length
             if decompressed.len() >= self.length_decompressed as usize {
                 break;
             }
@@ -252,7 +229,6 @@ fn compute_nibble_pattern(flag_idx: usize, low_nibble: u8) -> (u8, u8) {
     }
 
     // Combine nibbles into two bytes
-    // For debugging, let's also print the values for critical cases
     let byte1 = (nibbles[0] << 4) | nibbles[1];
     let byte2 = (nibbles[2] << 4) | nibbles[3];
 

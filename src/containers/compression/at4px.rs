@@ -61,7 +61,6 @@ impl ContainerHandler for At4pxContainer {
         b"AT4PX"
     }
 
-    // Converts raw binary data to At4pxContainer
     fn deserialise(data: &[u8]) -> io::Result<Box<dyn CompressionContainer>> {
         if data.len() < AT4PX_CONTAINER_HEADER_SIZE {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Data too short"));
@@ -98,7 +97,6 @@ impl ContainerHandler for At4pxContainer {
 }
 
 impl CompressionContainer for At4pxContainer {
-    // Decompress the At4pxContainer to be processed later as an indexed data image
     fn decompress(&self) -> Result<Vec<u8>, String> {
         // Tracks the current position of compressed data
         let mut pos = 0;

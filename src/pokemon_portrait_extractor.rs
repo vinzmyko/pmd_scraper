@@ -1,13 +1,13 @@
-use std::{
-    fs::{self, File},
-    io::{self, Read},
-    path::{Path, PathBuf},
-};
-
 use crate::{
     filesystem::{FileAllocationTable, FileNameTable},
     graphics::portrait::{create_portrait_atlas, AtlasType, KaoFile},
     rom::read_header,
+};
+
+use std::{
+    fs::{self, File},
+    io::{self, Read},
+    path::{Path, PathBuf},
 };
 
 pub struct PortraitExtractor {

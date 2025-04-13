@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::usize;
+use std::{collections::HashMap, usize};
 
 // A FatEntry contains the file location
 pub struct FatEntry {
@@ -7,12 +6,10 @@ pub struct FatEntry {
     pub end_address: u32,   // 4 bytes long
 }
 
-// Contains all the files
 pub struct FileAllocationTable {
     pub entries: Vec<FatEntry>,
 }
 
-#[allow(dead_code)]
 impl FileAllocationTable {
     pub fn read_from_rom(
         rom_data: &[u8],
@@ -78,11 +75,10 @@ impl FileAllocationTable {
     }
 }
 
-#[derive(Debug)]
 pub struct DirectoryEntry {
     pub offset: u32, // Offset to sub-table
     pub first_file_id: u16,
-    pub parent_id: u16,
+    pub _parent_id: u16,
 }
 
 pub enum FntEntry {
@@ -96,7 +92,6 @@ const DIRECTORY_ID_BASE: u16 = 0xF000;
 const ESTIMATED_ENTRIES_PER_SUBTABLE: usize = 16;
 const ESTIMATED_FILES_PER_DIRECTORY: usize = 8;
 
-#[derive(Debug)]
 pub struct FileNameTable {
     pub directories: Vec<DirectoryEntry>,
     pub file_names: HashMap<u16, String>,
@@ -104,7 +99,6 @@ pub struct FileNameTable {
     pub directory_structure: HashMap<u16, Vec<u16>>, // Parent ID -> child dir IDs
 }
 
-#[allow(dead_code)]
 impl FileNameTable {
     pub fn read_from_rom(rom_data: &[u8], fnt_offset: u32) -> Result<Self, std::io::Error> {
         let mut fnt = FileNameTable {
@@ -176,7 +170,7 @@ impl FileNameTable {
             self.directories.push(DirectoryEntry {
                 offset: subtable_offset,
                 first_file_id,
-                parent_id,
+                _parent_id: parent_id,
             });
         }
 
@@ -297,39 +291,6 @@ impl FileNameTable {
         Ok(())
     }
 
-    /// Get the full path for a directory ID
-    fn get_directory_path(&self, dir_id: u16) -> Option<String> {
-        if dir_id == DIRECTORY_ID_BASE {
-            // Root directory has empty path
-            return Some(String::new());
-        }
-
-        // Find the directory entry
-        // Lower 12 bits indicate index of directory
-        let dir_index = (dir_id & 0x0FFF) as usize;
-        if dir_index >= self.directories.len() {
-            return None;
-        }
-
-        // Get the directory name
-        let dir_name = self.directory_names.get(&dir_id)?;
-
-        // Get the parent directory
-        let parent_id = self.directories[dir_index].parent_id;
-
-        // Recursively build the path
-        if let Some(parent_path) = self.get_directory_path(parent_id) {
-            if parent_path.is_empty() {
-                return Some(dir_name.clone());
-            } else {
-                // This is a simple format! call - no need to precompute capacity
-                return Some(format!("{}/{}", parent_path, dir_name));
-            }
-        }
-
-        None
-    }
-
     /// Get a file ID for a given path
     pub fn get_file_id(&self, path: &str) -> Option<u16> {
         let parts: Vec<&str> = path.split('/').collect();
@@ -391,95 +352,5 @@ impl FileNameTable {
         }
 
         None
-    }
-
-
-    /// Pokémon Mystery Dungeon 2 games utilise an overlay system on the Nintendo DS to optimise memory usage. The game loads and unloads specific overlays as needed for different functions such as gameplay, cutscenes and dungeon exploration.
-    /// This means files like 'monster.bin' can be accessed through multiple directory paths (e.g., both in the root directory and 'MONSTER/' directory). There is no single definitive file path structure, as the same file may appear in multiple locations by design.    
-    pub fn show_directory_content(&self, dir_path: Option<&str>) -> Vec<String> {
-        let path = dir_path.unwrap_or("");
-        let mut results = Vec::new();
-
-        //Filter files
-        let filter = [".bin"];
-
-        if path.is_empty() || path == "/" {
-            if let Some(children) = self.directory_structure.get(&DIRECTORY_ID_BASE) {
-                for &child_id in children {
-                    if let Some(name) = self.directory_names.get(&child_id) {
-                        results.push(format!("{}/", name));
-                    }
-                }
-            }
-
-            let root_dir = &self.directories[0];
-            let mut file_id = root_dir.first_file_id;
-
-            loop {
-                if let Some(name) = self.file_names.get(&file_id) {
-                    if filter.iter().any(|ext| name.ends_with(ext)) {
-                        results.push(name.clone());
-                    }
-                    file_id += 1;
-                } else {
-                    break;
-                }
-            }
-
-            return results;
-        }
-
-        let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
-        let mut current_dir_id = DIRECTORY_ID_BASE;
-
-        for &dir_name in &parts {
-            let mut found = false;
-
-            if let Some(children) = self.directory_structure.get(&current_dir_id) {
-                for &child_id in children {
-                    if let Some(name) = self.directory_names.get(&child_id) {
-                        if name == dir_name {
-                            current_dir_id = child_id;
-                            found = true;
-                            // Found correct dir
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if !found {
-                println!("Directory not found: {}", path);
-                return results;
-            }
-        }
-
-        if let Some(children) = self.directory_structure.get(&current_dir_id) {
-            for &child_id in children {
-                if let Some(name) = self.directory_names.get(&child_id) {
-                    results.push(format!("{}/", name));
-                }
-            }
-        }
-
-        // Lower 12 bits represent index
-        let dir_index = (current_dir_id & 0x0FFF) as usize;
-        if dir_index < self.directories.len() {
-            let dir_entry = &self.directories[dir_index];
-            let mut file_id = dir_entry.first_file_id;
-
-            loop {
-                if let Some(name) = self.file_names.get(&file_id) {
-                    if filter.iter().any(|ext| name.ends_with(ext)) {
-                        results.push(name.clone());
-                    }
-                    file_id += 1;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        results
     }
 }

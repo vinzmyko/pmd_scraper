@@ -1,21 +1,24 @@
-use crate::containers::{ContainerHandler, compression::at4px::At4pxContainer};
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    usize,
+};
+
+use crate::containers::{compression::at4px::At4pxContainer, ContainerHandler};
 
 use image::RgbaImage;
 use oxipng::{self, InFile, OutFile};
 use serde_json;
-use std::convert::TryInto;
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::usize;
-use std::{collections::HashMap, path::Path};
 
 /// Represents a single portrait image from the KAO file
 #[derive(Clone, Debug)]
 pub struct Portrait {
     palette: Vec<[u8; 3]>,    // RGB colors
     compressed_data: Vec<u8>, // AT4PX compressed data
-    _original_size: usize,    // Size of original data
+    _original_size: usize,
 }
 
 impl Portrait {
@@ -24,19 +27,17 @@ impl Portrait {
             return Err("Data too short for portrait".to_string());
         }
 
-        // Read palette - 16 RGB colors
         let mut palette = Vec::with_capacity(16);
         for i in 0..16 {
             let offset = i * 3;
             palette.push([data[offset], data[offset + 1], data[offset + 2]]);
         }
 
-        // Get container size and deserialise in one step
+        // Get container size and deserialise
         let (container_size, _) =
             At4pxContainer::get_container_size_and_deserialise(&data[KAO_IMG_PAL_SIZE..])
                 .map_err(|e| format!("Failed to parse AT4PX container: {}", e))?;
 
-        // Avoid cloning the data by using a slice
         let compressed_data = data[KAO_IMG_PAL_SIZE..KAO_IMG_PAL_SIZE + container_size].to_vec();
         let _original_size = KAO_IMG_PAL_SIZE + container_size;
 
@@ -48,12 +49,10 @@ impl Portrait {
     }
 
     pub fn to_rgba_image(&self) -> Result<RgbaImage, String> {
-        // Create AT4PX container from compressed data
-        let container = At4pxContainer::deserialise(&self.compressed_data)
+        let at4px_container = At4pxContainer::deserialise(&self.compressed_data)
             .map_err(|e| format!("Failed to create AT4PX container: {}", e))?;
 
-        // Decompress container as image data
-        let decompressed = container.decompress()?;
+        let decompressed = at4px_container.decompress()?;
 
         const IMG_DIM: u32 = 40;
         const TILE_DIM: usize = 8;
@@ -61,10 +60,8 @@ impl Portrait {
         const PIXELS_PER_TILE: usize = TILE_DIM * TILE_DIM;
         const TOTAL_PIXELS: usize = (IMG_DIM * IMG_DIM) as usize;
 
-        // Buffer that holds the entire rgba image, each pixel contains rgba (4)
         let mut image_buffer = vec![0u8; (IMG_DIM * IMG_DIM * 4) as usize];
 
-        // Pre-calculates top left corner position
         let mut tile_positions = Vec::with_capacity(GRID_DIM * GRID_DIM);
         for tile_id in 0..(GRID_DIM * GRID_DIM) {
             let tile_x = (tile_id % GRID_DIM) as u32;
@@ -80,11 +77,9 @@ impl Portrait {
         for byte_idx in 0..(pixel_count / 2) {
             let byte = decompressed[byte_idx];
 
-            // Extract both 4-bit values from the byte
-            let color_idx2 = (byte >> 4) & 0xF; // High nibble
             let color_idx1 = byte & 0xF; // Low nibble
+            let color_idx2 = (byte >> 4) & 0xF; // High nibble
 
-            // Handle two pixels
             for i in 0..2 {
                 let idx = byte_idx * 2 + i;
 
@@ -92,7 +87,7 @@ impl Portrait {
                 let tile_id = idx / PIXELS_PER_TILE;
 
                 if tile_id >= tile_positions.len() {
-                    continue; // Protect against out-of-bounds
+                    continue; // Protect against out-of-bounds error
                 }
 
                 // Get pre-calculated tile position
@@ -103,11 +98,10 @@ impl Portrait {
                 let in_tile_x = (idx_in_tile % TILE_DIM) as u32;
                 let in_tile_y = (idx_in_tile / TILE_DIM) as u32;
 
-                // Calculate final pixel position
-                let x = tile_x + in_tile_x;
-                let y = tile_y + in_tile_y;
+                let final_x = tile_x + in_tile_x;
+                let final_y = tile_y + in_tile_y;
 
-                if x >= IMG_DIM || y >= IMG_DIM {
+                if final_x >= IMG_DIM || final_y >= IMG_DIM {
                     continue; // Protect against out-of-bounds
                 }
 
@@ -118,8 +112,8 @@ impl Portrait {
                     continue; // Protect against out-of-bounds
                 }
 
-                // Calculate position in the RGBA buffer (4 bytes per pixel)
-                let buffer_pos = ((y * IMG_DIM + x) * 4) as usize;
+                // Calculate position in the RGBA buffer, 4 bytes per pixel
+                let buffer_pos = ((final_y * IMG_DIM + final_x) * 4) as usize;
 
                 // Copy color data to buffer
                 let color = &self.palette[color_idx];
@@ -130,7 +124,6 @@ impl Portrait {
             }
         }
 
-        // Create image from buffer
         RgbaImage::from_raw(IMG_DIM, IMG_DIM, image_buffer)
             .ok_or_else(|| "Failed to create image from buffer".to_string())
     }
@@ -193,18 +186,20 @@ impl KaoFile {
             ));
         }
 
-        // Calculate TOC entry position
-        let entry_pos = self.toc_start_offset
+        let toc_entry_pos = self.toc_start_offset
             + (index * KAO_PORTRAITS_PER_POKEMON * KAO_PORTRAIT_POINTER_SIZE)
             + (subindex * KAO_PORTRAIT_POINTER_SIZE);
 
-        if entry_pos + 4 > self.data.len() {
+        if toc_entry_pos + 4 > self.data.len() {
             return Err("Invalid TOC entry position".to_string());
         }
 
         // Read pointer
-        let portrait_pointer =
-            i32::from_le_bytes(self.data[entry_pos..entry_pos + 4].try_into().unwrap());
+        let portrait_pointer = i32::from_le_bytes(
+            self.data[toc_entry_pos..toc_entry_pos + 4]
+                .try_into()
+                .unwrap(),
+        );
 
         // Negative pointer means no portrait at this position
         if portrait_pointer < 0 {
@@ -237,10 +232,9 @@ pub fn create_portrait_atlas(
         AtlasType::Expressions => 535,
     };
 
-    // Count total portraits first - pass atlas_type by reference
     let total_portrait_count = count_portraits(kao_file, atlas_type);
 
-    // Calculate optimal layout (same formula as WAN atlas code)
+    // Calculate optimal layout
     let frames_per_row = (total_portrait_count as f32).sqrt().ceil() as u32;
     let rows = (total_portrait_count as u32 + frames_per_row - 1) / frames_per_row;
 
@@ -249,11 +243,10 @@ pub fn create_portrait_atlas(
     let atlas_height = rows * PORTRAIT_SIZE as u32;
 
     println!(
-        "Creating atlas with optimal dimensions: {}x{} for {} portraits",
+        "Creating atlas with dimensions: {}x{} for {} portraits",
         atlas_width, atlas_height, total_portrait_count
     );
 
-    // Create optimally sized atlas
     let mut atlas = RgbaImage::new(atlas_width, atlas_height);
 
     // Initialize to transparent
@@ -261,7 +254,6 @@ pub fn create_portrait_atlas(
         *pixel = image::Rgba([0, 0, 0, 0]);
     }
 
-    // Use a separate mutable counter for placement
     let mut current_portrait_idx = 0;
     let mut portrait_metadata: HashMap<String, (usize, usize)> = HashMap::new();
 
@@ -341,7 +333,6 @@ pub fn create_portrait_atlas(
         }
     }
 
-    // Save metadata
     let metadata_output_path = output_path.with_extension("json");
     match save_metadata(&portrait_metadata, &metadata_output_path) {
         Ok(_) => {
@@ -352,19 +343,16 @@ pub fn create_portrait_atlas(
         }
     }
 
-    // Save the atlas image with optimization
     println!("Saving atlas to {}...", output_path.display());
 
-    // First save the regular image
     atlas
         .save(output_path)
         .map_err(|e| format!("Failed to save atlas image: {}", e))?;
 
-    // Then apply optimization
+    // Apply optimization
     println!("Optimizing PNG for smaller file size...");
     if let Err(e) = optimise_portrait_png(output_path, true) {
         println!("Warning: PNG optimization failed: {}", e);
-        // We continue even if optimization fails
     } else {
         println!("PNG optimization complete");
     }
@@ -396,9 +384,8 @@ fn save_metadata(metadata: &HashMap<String, (usize, usize)>, path: &PathBuf) -> 
     Ok(())
 }
 
-/// Optimizes a PNG file using oxipng for better compression
+/// Optimises a PNG file using oxipng for better compression
 fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), String> {
-    // Create a temporary path
     let temp_path = path.with_extension("temp.png");
 
     // If the file was already saved at this path, rename it to temp
@@ -409,14 +396,11 @@ fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), Strin
         return Err("Image file not found at expected path".to_string());
     }
 
-    // Set optimization level based on preference
     let preset = if max_compression { 6 } else { 3 };
     let mut options = oxipng::Options::from_preset(preset);
 
-    // Enable bit depth reduction - works well for portraits with limited colors
     options.bit_depth_reduction = true;
 
-    // Optimize the PNG
     oxipng::optimize(
         &InFile::Path(temp_path.clone()),
         &OutFile::Path(Some(path.to_path_buf())),

@@ -1,29 +1,19 @@
-mod containers;
-mod data;
+mod rom;
 mod filesystem;
-mod formats;
-mod graphics;
 mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
-mod rom;
 
-use crate::graphics::portrait::KaoFile;
+mod containers;
+mod graphics;
+mod data;
+mod formats;
 
-use filesystem::{FileAllocationTable, FileNameTable};
-use graphics::portrait::{create_portrait_atlas, AtlasType};
+use std::{fs, path::PathBuf};
+
 use pokemon_portrait_extractor::PortraitExtractor;
 use pokemon_sprite_extractor::PokemonExtractor;
-use rom::read_header;
-use std::fs;
-use std::path::PathBuf;
-
-use std::cmp::min;
-
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 fn main() {
-    // Set up paths
     let rom_path = PathBuf::from("../../ROMs/pmd_eos_us.nds");
     let output_dir_sprites = PathBuf::from("./output/MONSTER");
     let output_dir_portraits = PathBuf::from("./output/FONT");
@@ -48,7 +38,7 @@ fn main() {
     // For debugging
     //let id_range = 199 ..= 250;
     //let pokemon_ids: Vec<usize> = id_range.collect();
-    let pokemon_ids = vec![1];
+    //let pokemon_ids = vec![1];
 
     match PokemonExtractor::new(&rom_path) {
         Ok(extractor) => {

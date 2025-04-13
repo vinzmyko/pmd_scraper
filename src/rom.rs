@@ -1,7 +1,9 @@
 /// Reads the ROM header and creates a RomHeader data structure
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::{
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+    path::PathBuf,
+};
 
 #[allow(dead_code)]
 pub struct Rom {
@@ -15,7 +17,6 @@ impl Rom {
     }
 }
 
-#[derive(Debug)]
 #[allow(dead_code)]
 pub struct RomHeader {
     pub game_title: String,

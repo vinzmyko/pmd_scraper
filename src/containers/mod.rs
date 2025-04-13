@@ -1,5 +1,5 @@
-pub mod compression;
 pub mod binpack;
+pub mod compression;
 pub mod sir0;
 
 use std::io;
