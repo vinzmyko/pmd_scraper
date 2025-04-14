@@ -1,28 +1,21 @@
 use crate::{
-    filesystem::{FileAllocationTable, FileNameTable},
     graphics::portrait::{create_portrait_atlas, AtlasType, KaoFile},
-    rom::read_header,
+    rom::Rom,
 };
 
 use std::{
-    fs::{self, File},
-    io::{self, Read},
-    path::{Path, PathBuf},
+    fs::{self},
+    io::{self},
+    path::Path,
 };
 
-pub struct PortraitExtractor {
-    rom_path: PathBuf,
-    rom_data: Vec<u8>,
+pub struct PortraitExtractor<'a> {
+    rom: &'a Rom,
 }
 
-impl PortraitExtractor {
-    pub fn new<P: AsRef<Path>>(rom_path: P) -> io::Result<Self> {
-        let rom_path = rom_path.as_ref().to_path_buf();
-        let mut rom_file = File::open(&rom_path)?;
-        let mut rom_data = Vec::new();
-        rom_file.read_to_end(&mut rom_data)?;
-
-        Ok(PortraitExtractor { rom_path, rom_data })
+impl<'a> PortraitExtractor<'a> {
+    pub fn new(rom: &'a Rom) -> Self {
+        PortraitExtractor { rom }
     }
 
     /// Extract portrait atlases from the ROM
@@ -48,21 +41,16 @@ impl PortraitExtractor {
 
     // Helper methods
     fn extract_kao_file(&self) -> io::Result<Vec<u8>> {
-        // Read ROM header
-        let header = read_header(&self.rom_path);
-
-        // Parse FAT and FNT tables
-        let fat =
-            FileAllocationTable::read_from_rom(&self.rom_data, header.fat_offset, header.fat_size)?;
-        let fnt = FileNameTable::read_from_rom(&self.rom_data, header.fnt_offset)?;
-
-        // Get file ID for the KAO file
-        let kao_file_id = fnt
+        let kao_file_id = self
+            .rom
+            .fnt
             .get_file_id("FONT/kaomado.kao")
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "kao.kao not found"))?;
 
         // Extract KAO file data and convert to Vec<u8> using to_vec()
-        fat.get_file_data(kao_file_id as usize, &self.rom_data)
+        self.rom
+            .fat
+            .get_file_data(kao_file_id as usize, &self.rom.data)
             .map(|data| data.to_vec()) // Convert &[u8] to Vec<u8>
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Failed to extract kao.kao"))
     }

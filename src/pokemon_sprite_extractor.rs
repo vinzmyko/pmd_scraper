@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
-    fs::{self, File},
-    io::{self, Cursor, Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    fs::{self},
+    io::{self, Cursor, Seek, SeekFrom},
+    path::Path,
 };
 
 use crate::{
@@ -13,29 +13,22 @@ use crate::{
         ContainerHandler,
     },
     data::{monster_md::MonsterData, MonsterEntry},
-    filesystem::{FileAllocationTable, FileNameTable},
     graphics::{
         atlas::{create_pokemon_atlas, AtlasConfig},
         wan::{parser, read_u16_le, WanFile},
         WanType,
     },
-    rom::read_header,
+    rom::Rom,
 };
 
 /// Handles extracting Pokémon sprite data from the ROM
-pub struct PokemonExtractor {
-    rom_path: PathBuf,
-    rom_data: Vec<u8>,
+pub struct PokemonExtractor<'a> {
+    rom: &'a Rom,
 }
 
-impl PokemonExtractor {
-    pub fn new<P: AsRef<Path>>(rom_path: P) -> io::Result<Self> {
-        let rom_path = rom_path.as_ref().to_path_buf();
-        let mut rom_file = File::open(&rom_path)?;
-        let mut rom_data = Vec::new();
-        rom_file.read_to_end(&mut rom_data)?;
-
-        Ok(PokemonExtractor { rom_path, rom_data })
+impl<'a> PokemonExtractor<'a> {
+    pub fn new(rom: &'a Rom) -> Self {
+        PokemonExtractor { rom }
     }
 
     pub fn extract_monster_data(
@@ -43,39 +36,44 @@ impl PokemonExtractor {
         pokemon_ids: Option<&[usize]>,
         output_dir: &Path,
     ) -> io::Result<()> {
-        let header = read_header(&self.rom_path);
-
-        let fat =
-            FileAllocationTable::read_from_rom(&self.rom_data, header.fat_offset, header.fat_size)?;
-
-        let fnt = FileNameTable::read_from_rom(&self.rom_data, header.fnt_offset)?;
-
-        let monster_md_id = fnt
+        let monster_md_id = self
+            .rom
+            .fnt
             .get_file_id("BALANCE/monster.md")
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "monster.md not found"))?;
 
-        let monster_bin_id = fnt
+        let monster_bin_id = self
+            .rom
+            .fnt
             .get_file_id("MONSTER/monster.bin")
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "monster.bin not found"))?;
 
-        let m_attack_bin_id = fnt
+        let m_attack_bin_id = self
+            .rom
+            .fnt
             .get_file_id("MONSTER/m_attack.bin")
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "m_attack.bin not found"))?;
 
-        let monster_md_data = fat
-            .get_file_data(monster_md_id as usize, &self.rom_data)
+        let monster_md_data = self
+            .rom
+            .fat
+            .get_file_data(monster_md_id as usize, &self.rom.data)
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "Failed to extract monster.md")
             })?;
 
-        let monster_bin_data = fat
-            .get_file_data(monster_bin_id as usize, &self.rom_data)
+        let monster_bin_data = self
+            .rom
+            .fat
+            .get_file_data(monster_bin_id as usize, &self.rom.data)
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "Failed to extract monster.bin")
             })?;
 
-        let m_attack_bin_data = fat
-            .get_file_data(m_attack_bin_id as usize, &self.rom_data)
+        let m_attack_bin_data = self
+            .rom
+            .fat
+            .get_file_data(m_attack_bin_id as usize, &self.rom.data)
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "Failed to extract m_attack.bin")
             })?;

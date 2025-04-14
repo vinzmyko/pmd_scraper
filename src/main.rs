@@ -1,17 +1,19 @@
-mod rom;
 mod filesystem;
 mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
+mod rom;
 
 mod containers;
-mod graphics;
 mod data;
 mod formats;
+mod graphics;
 
 use std::{fs, path::PathBuf};
 
-use pokemon_portrait_extractor::PortraitExtractor;
-use pokemon_sprite_extractor::PokemonExtractor;
+use {
+    pokemon_portrait_extractor::PortraitExtractor, pokemon_sprite_extractor::PokemonExtractor,
+    rom::Rom,
+};
 
 fn main() {
     let rom_path = PathBuf::from("../../ROMs/pmd_eos_us.nds");
@@ -33,39 +35,18 @@ fn main() {
         }
     }
 
-    println!("ROM Path: {:?}", &rom_path);
+    match Rom::new(rom_path) {
+        Ok(rom) => {
+            println!("Sucessfully parsed ROM, no corruption detected");
+            println!("{}", rom.region);
+            let sprite_extractor = PokemonExtractor::new(&rom);
+            let _ = sprite_extractor.extract_monster_data(None, &output_dir_sprites);
 
-    // For debugging
-    //let id_range = 199 ..= 250;
-    //let pokemon_ids: Vec<usize> = id_range.collect();
-    //let pokemon_ids = vec![1];
-
-    match PokemonExtractor::new(&rom_path) {
-        Ok(extractor) => {
-            println!("Sprites Output Dir: {:?}", output_dir_sprites);
-            if let Err(e) = extractor.extract_monster_data(None, &output_dir_sprites)
-            {
-                eprintln!("Error in focused test: {}", e);
-            }
+            let portrait_extractor = PortraitExtractor::new(&rom);
+            let _ = portrait_extractor.extract_portrait_atlases(&output_dir_portraits);
         }
         Err(e) => {
-            eprintln!("Failed to open ROM file: {}", e);
+            eprintln!("Failed to read ROM file, possibly corrupted: {}", e);
         }
     }
-
-    println!("Sprites Output Dir: {:?}", output_dir_sprites);
-
-    match PortraitExtractor::new(&rom_path) {
-        Ok(extractor) => {
-            println!("Portraits Output Dir: {:?}", output_dir_sprites);
-            if let Err(e) = extractor.extract_portrait_atlases(&output_dir_portraits) {
-                eprintln!("Error extracting portraits: {}", e);
-            }
-        },
-        Err(e) => {
-            eprintln!("Failed to create portrait extractor: {}", e);
-        }
-    }
-
-    println!("Processing complete!");
 }

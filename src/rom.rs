@@ -1,19 +1,55 @@
 /// Reads the ROM header and creates a RomHeader data structure
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
-    path::PathBuf,
+    io::{self, Error, ErrorKind, Read, Seek, SeekFrom},
+    path::{Path, PathBuf},
 };
+
+use crate::filesystem::{FileAllocationTable, FileNameTable};
 
 #[allow(dead_code)]
 pub struct Rom {
     pub path: PathBuf,
+    pub data: Vec<u8>,
+    pub header: RomHeader,
+    pub region: String,
+    pub fnt: FileNameTable,
+    pub fat: FileAllocationTable,
 }
 
-#[allow(dead_code)]
 impl Rom {
-    pub fn new<P: Into<PathBuf>>(path: P) -> Self {
-        Rom { path: path.into() }
+    pub fn new<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let path_buf = path.as_ref().to_path_buf();
+
+        let mut rom_file = File::open(&path_buf)?;
+        let mut rom_data = Vec::new();
+        rom_file.read_to_end(&mut rom_data)?;
+
+        let rom_header = read_header(&path_buf);
+
+        let region = determine_rom_region(&rom_header.game_code).unwrap_or_else(|e| {
+            eprint!("ERROR: {}", e);
+            panic!("Cannot continue don't have offsets for non EU, NA, JP ROMs");
+        });
+
+        let fat = FileAllocationTable::read_from_rom(
+            &rom_data,
+            rom_header.fat_offset,
+            rom_header.fat_size,
+        )?;
+
+        let fnt = FileNameTable::read_from_rom(&rom_data, rom_header.fnt_offset)?;
+
+        // TODO: implement code that verifies no ROM corruption
+
+        Ok(Rom {
+            path: path_buf,
+            data: rom_data,
+            header: rom_header,
+            region,
+            fnt,
+            fat,
+        })
     }
 }
 
@@ -57,9 +93,9 @@ pub fn read_header(rom_path: &PathBuf) -> RomHeader {
     file.seek(SeekFrom::Start(0x012)).unwrap();
     file.read_exact(&mut unit_code).unwrap();
 
-    let mut region = [0u8; 1];
+    let mut nds_region = [0u8; 1];
     file.seek(SeekFrom::Start(0x01D)).unwrap();
-    file.read_exact(&mut region).unwrap();
+    file.read_exact(&mut nds_region).unwrap();
 
     let mut version = [0u8; 1];
     file.seek(SeekFrom::Start(0x01E)).unwrap();
@@ -112,7 +148,7 @@ pub fn read_header(rom_path: &PathBuf) -> RomHeader {
         game_code: String::from_utf8_lossy(&game_code_buffer).to_string(),
         maker_code: String::from_utf8_lossy(&maker_code_buffer).to_string(),
         unit_code: unit_code[0],
-        nds_region: region[0],
+        nds_region: nds_region[0],
         rom_version: version[0],
         device_capacity: device_capacity[0],
         encryption_seed: encrypt_seed[0],
@@ -124,5 +160,22 @@ pub fn read_header(rom_path: &PathBuf) -> RomHeader {
         fnt_size: u32::from_le_bytes(fnt_size),
         fat_offset: u32::from_le_bytes(fat_offset),
         fat_size: u32::from_le_bytes(fat_size),
+    }
+}
+
+fn determine_rom_region(game_code: &String) -> io::Result<String> {
+    let last_char = game_code
+        .chars()
+        .last()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Game code empty"))?;
+
+    match last_char {
+        'E' => Ok(String::from("NA")),
+        'P' => Ok(String::from("EU")),
+        'J' => Ok(String::from("JP")),
+        _ => Err(Error::new(
+            ErrorKind::InvalidData,
+            "Game ROM is not from NA, EU, or JP",
+        )),
     }
 }
