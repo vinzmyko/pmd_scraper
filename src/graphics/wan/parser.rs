@@ -3,69 +3,19 @@
 //! This module provides functions to parse WAN files from binary data,
 //! supporting both character and effect WAN variants.
 
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use crate::graphics::{
+use crate::{
+    binary_utils::{read_u32_le, read_u16_le, read_u8, read_i16_le},
+    graphics::{
     wan::{
         model::{
             Animation, FrameOffset, ImgPiece, MetaFrame, MetaFramePiece, SequenceFrame, WanFile
         },
         WanError
     }, WanType,
+    }
 };
-
-pub fn read_u8(cursor: &mut Cursor<&[u8]>) -> io::Result<u8> {
-    if cursor.position() >= cursor.get_ref().len() as u64 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "End of buffer reached",
-        ));
-    }
-
-    let mut buf = [0u8; 1];
-    cursor.read_exact(&mut buf)?;
-    Ok(buf[0])
-}
-
-pub fn read_u16_le(cursor: &mut Cursor<&[u8]>) -> io::Result<u16> {
-    if cursor.position() + 1 >= cursor.get_ref().len() as u64 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "End of buffer reached or not enough bytes for u16",
-        ));
-    }
-
-    let mut buf = [0u8; 2];
-    cursor.read_exact(&mut buf)?;
-    Ok(u16::from_le_bytes(buf))
-}
-
-pub fn read_u32_le(cursor: &mut Cursor<&[u8]>) -> io::Result<u32> {
-    if cursor.position() + 3 >= cursor.get_ref().len() as u64 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "End of buffer reached or not enough bytes for u32",
-        ));
-    }
-
-    let mut buf = [0u8; 4];
-    cursor.read_exact(&mut buf)?;
-    Ok(u32::from_le_bytes(buf))
-}
-
-/// Read an i16 in little-endian format from the cursor
-pub fn read_i16_le(cursor: &mut Cursor<&[u8]>) -> Result<i16, io::Error> {
-    if cursor.position() + 1 >= cursor.get_ref().len() as u64 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "End of buffer reached or not enough bytes for i16",
-        ));
-    }
-
-    let mut buf = [0u8; 2];
-    cursor.read_exact(&mut buf)?;
-    Ok(i16::from_le_bytes(buf))
-}
 
 /// Parse WAN file from SIR0 content that has already been extracted
 pub fn parse_wan_from_sir0_content(
