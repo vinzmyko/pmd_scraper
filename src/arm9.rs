@@ -1,14 +1,19 @@
-use std::collections::HashMap;
-use std::io::{self};
+use std::{
+    collections::HashMap,
+    io::{self, Cursor},
+};
+
+use crate::binary_utils;
 
 /// Represents an overlay in a Nintendo DS ROM
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Overlay {
     pub id: u32,
     pub data: Vec<u8>,
     pub ram_address: u32,
     pub ram_size: u32,
-    pub bss_size: u32,
+    pub block_started_by_symbol_size: u32,
     pub static_init_start: u32,
     pub static_init_end: u32,
     pub file_id: u32,
@@ -16,22 +21,13 @@ pub struct Overlay {
     pub flags: u8,
 }
 
-/// Helper functions for reading values in little-endian order
-fn read_u32(data: &[u8], offset: usize) -> u32 {
-    let b0 = data[offset] as u32;
-    let b1 = data[offset + 1] as u32;
-    let b2 = data[offset + 2] as u32;
-    let b3 = data[offset + 3] as u32;
-    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-}
-
-// Replace the loop in load_overlay_table with bounded iteration:
 pub fn load_overlay_table(
     table_data: &[u8],
     file_callback: impl Fn(u32, u32) -> io::Result<Vec<u8>>,
     ids_to_load: Option<&[u32]>,
 ) -> io::Result<HashMap<u32, Overlay>> {
     let mut overlays = HashMap::new();
+    let mut cursor = Cursor::new(table_data);
 
     let table_len = table_data.len();
     println!("Overlay table size: {} bytes", table_len);
@@ -41,55 +37,39 @@ pub fn load_overlay_table(
     println!("Overlay table contains {} complete entries", entry_count);
 
     for entry_idx in 0..entry_count {
-        let i = entry_idx * 32;
+        let entry_offset = entry_idx * 32;
+        binary_utils::seek_to(&mut cursor, entry_offset as u64)?;
 
-        // Parse overlay entry
-        let ov_id = read_u32(table_data, i);
-        let ram_addr = read_u32(table_data, i + 4);
-        let ram_size = read_u32(table_data, i + 8);
-        let bss_size = read_u32(table_data, i + 12);
-        let static_init_start = read_u32(table_data, i + 16);
-        let static_init_end = read_u32(table_data, i + 20);
-        let file_id = read_u32(table_data, i + 24);
-        let compressed_size_flags = read_u32(table_data, i + 28);
+        let overlay_id = binary_utils::read_u32_le(&mut cursor)?;
+        let ram_address = binary_utils::read_u32_le(&mut cursor)?;
+        let ram_size = binary_utils::read_u32_le(&mut cursor)?;
+        let block_started_by_symbol_size = binary_utils::read_u32_le(&mut cursor)?;
+        let static_init_start = binary_utils::read_u32_le(&mut cursor)?;
+        let static_init_end = binary_utils::read_u32_le(&mut cursor)?;
+        let file_id = binary_utils::read_u32_le(&mut cursor)?;
+        let compressed_size_flags = binary_utils::read_u32_le(&mut cursor)?;
 
-        println!(
-            "Entry {}/{}: ID={}, file_id={}, offset={}",
-            entry_idx + 1,
-            entry_count,
-            ov_id,
-            file_id,
-            i
-        );
-
-        // Skip if not in ids_to_load
         if let Some(ids) = ids_to_load {
-            if !ids.contains(&ov_id) {
-                println!("  Skipping overlay {} (not requested)", ov_id);
+            if !ids.contains(&overlay_id) {
                 continue;
             }
         }
 
-        // Load file data with enhanced error handling
-        println!(
-            "  Attempting to load overlay {} (file_id={})",
-            ov_id, file_id
-        );
-        match file_callback(ov_id, file_id) {
+        match file_callback(overlay_id, file_id) {
             Ok(file_data) => {
                 println!(
                     "  Successfully loaded overlay {} ({} bytes)",
-                    ov_id,
+                    overlay_id,
                     file_data.len()
                 );
                 overlays.insert(
-                    ov_id,
+                    overlay_id,
                     Overlay {
-                        id: ov_id,
+                        id: overlay_id,
                         data: file_data,
-                        ram_address: ram_addr,
+                        ram_address,
                         ram_size,
-                        bss_size,
+                        block_started_by_symbol_size,
                         static_init_start,
                         static_init_end,
                         file_id,
@@ -99,15 +79,20 @@ pub fn load_overlay_table(
                 );
             }
             Err(e) => {
-                // If specifically requested, return an error
-                if ids_to_load.map_or(false, |ids| ids.contains(&ov_id)) {
-                    eprintln!("ERROR: Failed to load requested overlay {}: {}", ov_id, e);
+                if ids_to_load.map_or(false, |ids| ids.contains(&overlay_id)) {
+                    eprintln!(
+                        "ERROR: Failed to load requested overlay {}: {}",
+                        overlay_id, e
+                    );
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
-                        format!("Failed to load requested overlay {}: {}", ov_id, e),
+                        format!("Failed to load requested overlay {}: {}", overlay_id, e),
                     ));
                 } else {
-                    eprintln!("Warning: Failed to load optional overlay {}: {}", ov_id, e);
+                    eprintln!(
+                        "Warning: Failed to load optional overlay {}: {}",
+                        overlay_id, e
+                    );
                 }
             }
         }

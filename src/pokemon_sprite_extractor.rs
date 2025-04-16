@@ -15,10 +15,11 @@ use crate::{
     data::{monster_md::MonsterData, MonsterEntry},
     graphics::{
         atlas::{create_pokemon_atlas, AtlasConfig},
-        wan::{parser, read_u16_le, WanFile},
+        wan::{parser, WanFile},
         WanType,
     },
     rom::Rom,
+    binary_utils::read_u16_le,
 };
 
 /// Handles extracting Pokémon sprite data from the ROM

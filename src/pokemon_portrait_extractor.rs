@@ -1,12 +1,12 @@
-use crate::{
-    graphics::portrait::{create_portrait_atlas, AtlasType, KaoFile},
-    rom::Rom,
-};
-
 use std::{
     fs::{self},
     io::{self},
     path::Path,
+};
+
+use crate::{
+    graphics::portrait::{create_portrait_atlas, AtlasType, KaoFile},
+    rom::Rom,
 };
 
 pub struct PortraitExtractor<'a> {

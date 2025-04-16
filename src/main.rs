@@ -1,5 +1,6 @@
 mod animation_info_extractor;
 mod arm9;
+mod binary_utils;
 mod filesystem;
 mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
@@ -12,9 +13,8 @@ mod graphics;
 
 use std::{fs, path::PathBuf};
 
-use animation_info_extractor::AnimationInfoExtractor;
-
 use {
+    animation_info_extractor::AnimationInfoExtractor,
     pokemon_portrait_extractor::PortraitExtractor, pokemon_sprite_extractor::PokemonExtractor,
     rom::Rom,
 };
