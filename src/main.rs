@@ -1,6 +1,7 @@
 mod animation_info_extractor;
 mod arm9;
 mod binary_utils;
+mod effect_sprite_extractor;
 mod filesystem;
 mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
@@ -15,8 +16,8 @@ use std::{fs, path::PathBuf};
 
 use {
     animation_info_extractor::AnimationInfoExtractor,
-    pokemon_portrait_extractor::PortraitExtractor, pokemon_sprite_extractor::PokemonExtractor,
-    rom::Rom,
+    pokemon_portrait_extractor::PortraitExtractor,
+    pokemon_sprite_extractor::PokemonSpriteExtractor, rom::Rom,
 };
 
 fn main() {
@@ -58,11 +59,11 @@ fn main() {
             let _ = animation_info_extractor
                 .save_animation_info_json(&anim_data_info, &output_dir_animations);
 
-            let sprite_extractor = PokemonExtractor::new(&rom);
-            let _ = sprite_extractor.extract_monster_data(None, &output_dir_sprites);
+            //let sprite_extractor = PokemonExtractor::new(&rom);
+            //let _ = sprite_extractor.extract_monster_data(None, &output_dir_sprites);
 
-            let portrait_extractor = PortraitExtractor::new(&rom);
-            let _ = portrait_extractor.extract_portrait_atlases(&output_dir_portraits);
+            //let portrait_extractor = PortraitExtractor::new(&rom);
+            //let _ = portrait_extractor.extract_portrait_atlases(&output_dir_portraits);
         }
         Err(e) => {
             eprintln!("Failed to read ROM file, possibly corrupted: {}", e);

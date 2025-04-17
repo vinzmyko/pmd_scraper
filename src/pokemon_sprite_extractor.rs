@@ -23,13 +23,13 @@ use crate::{
 };
 
 /// Handles extracting Pokémon sprite data from the ROM
-pub struct PokemonExtractor<'a> {
+pub struct PokemonSpriteExtractor<'a> {
     rom: &'a Rom,
 }
 
-impl<'a> PokemonExtractor<'a> {
+impl<'a> PokemonSpriteExtractor<'a> {
     pub fn new(rom: &'a Rom) -> Self {
-        PokemonExtractor { rom }
+        PokemonSpriteExtractor { rom }
     }
 
     pub fn extract_monster_data(
