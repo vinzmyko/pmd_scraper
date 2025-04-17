@@ -184,7 +184,7 @@ pub struct AnimData {
     pub trap_table: Vec<TrapAnimationInfo>,
     pub item_table: Vec<ItemAnimationInfo>,
     pub raw_move_table: Vec<RawMoveAnimationInfo>,
-    pub general_table: Vec<EffectAnimationInfo>,
+    pub effect_table: Vec<EffectAnimationInfo>,
     pub special_move_table: Vec<SpecialMoveAnimationInfo>,
 }
 
@@ -361,7 +361,7 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
         });
     }
 
-    let mut general_table = Vec::new();
+    let mut effect_table = Vec::new();
     for offset in
         (general_table_ptr as usize..special_move_table_ptr as usize).step_by(GENERAL_DATA_SIZE)
     {
@@ -387,7 +387,7 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
         let unk5 = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
         let loop_flag = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
 
-        general_table.push(EffectAnimationInfo {
+        effect_table.push(EffectAnimationInfo {
             anim_type,
             file_index: anim_file,
             unk1,
@@ -430,7 +430,7 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
         trap_table,
         item_table,
         raw_move_table,
-        general_table,
+        effect_table,
         special_move_table,
     })
 }

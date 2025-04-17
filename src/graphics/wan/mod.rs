@@ -13,7 +13,6 @@ pub mod parser;
 pub mod renderer;
 
 pub use model::*;
-pub use parser::*;
 
 /// Coordinates for sprite positioning
 pub const CENTRE_X: i16 = 256;

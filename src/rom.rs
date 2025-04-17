@@ -159,24 +159,6 @@ impl Rom {
             self.loaded_overlays.keys().collect::<Vec<_>>()
         );
 
-        if !self.loaded_overlays.contains_key(&10) {
-            println!("Overlay 10 not found, trying to load it now");
-            match self.load_arm9_overlays(&[10]) {
-                Ok(_) => {
-                    println!("Successfully loaded overlay 10");
-                    println!(
-                        "loaded_overlays now: {:?}",
-                        self.loaded_overlays.keys().collect::<Vec<_>>()
-                    );
-                }
-                Err(e) => {
-                    return Err(format!("Failed to load overlay 10: {}", e));
-                }
-            }
-        } else {
-            println!("Overlay 10 is already loaded");
-        }
-
         let overlay10 = self.loaded_overlays.get(&10).ok_or_else(|| {
             println!("ERROR: Overlay 10 still not found in loaded_overlays after loading attempt");
             println!(
