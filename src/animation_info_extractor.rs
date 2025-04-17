@@ -23,17 +23,24 @@ impl<'a> AnimationInfoExtractor<'a> {
         AnimationInfoExtractor { rom }
     }
 
-    /// Extracts all animation data and saves it to JSON files
-    pub fn extract_all_animation_data(&mut self, output_dir: &Path) -> Result<PathBuf, String> {
+    pub fn parse_and_transform_animation_data(&mut self) -> AnimData {
         println!("Starting extraction of all animation data");
 
-        self.rom
+        let _ = self
+            .rom
             .load_arm9_overlays(&[10])
-            .map_err(|e| format!("Failed to load overlay 10: {}", e))?;
+            .map_err(|e| format!("Failed to load overlay 10: {}", e));
 
-        let anim_data = self.rom.extract_animation_data()?;
+        let anim_data = self.rom.extract_animation_data();
         println!("Extracted all animation data tables");
+        anim_data.expect("Failed to extract animation data tables")
+    }
 
+    pub fn save_animation_info_json(
+        &mut self,
+        anim_data: &AnimData,
+        output_dir: &Path,
+    ) -> Result<PathBuf, String> {
         let json_dir = output_dir.join("animation_data");
         fs::create_dir_all(&json_dir)
             .map_err(|e| format!("Failed to create JSON output directory: {}", e))?;
@@ -41,7 +48,7 @@ impl<'a> AnimationInfoExtractor<'a> {
         self.save_trap_animations_json(&json_dir, &anim_data.trap_table)?;
         self.save_item_animations_json(&json_dir, &anim_data.item_table)?;
         self.save_move_animations_json(&json_dir, &anim_data)?;
-        self.save_effect_animations_json(&json_dir, &anim_data.general_table)?;
+        self.save_effect_animations_json(&json_dir, &anim_data.effect_table)?;
 
         self.save_animation_summary(&json_dir, &anim_data)?;
 
@@ -143,7 +150,7 @@ impl<'a> AnimationInfoExtractor<'a> {
             "trap_table_count": anim_data.trap_table.len(),
             "item_table_count": anim_data.item_table.len(),
             "move_table_count": anim_data.raw_move_table.len(),
-            "general_table_count": anim_data.general_table.len(),
+            "general_table_count": anim_data.effect_table.len(),
             "special_move_table_count": anim_data.special_move_table.len(),
             "game_id": self.rom.id_code,
             "region": match self.rom.id_code.chars().last() {

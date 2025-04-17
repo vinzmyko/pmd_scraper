@@ -51,20 +51,12 @@ fn main() {
         Ok(mut rom) => {
             println!("Successfully parsed ROM, no corruption detected");
 
-            let mut extractor = AnimationInfoExtractor::new(&mut rom);
+            let mut animation_info_extractor = AnimationInfoExtractor::new(&mut rom);
 
             println!("Extracting all animation data...");
-            match extractor.extract_all_animation_data(&output_dir_animations) {
-                Ok(output_path) => {
-                    println!(
-                        "Successfully extracted all animation data to {}",
-                        output_path.display()
-                    );
-                }
-                Err(e) => {
-                    eprintln!("Failed to extract all animation data: {}", e);
-                }
-            }
+            let anim_data_info = animation_info_extractor.parse_and_transform_animation_data();
+            let _ = animation_info_extractor
+                .save_animation_info_json(&anim_data_info, &output_dir_animations);
 
             let sprite_extractor = PokemonExtractor::new(&rom);
             let _ = sprite_extractor.extract_monster_data(None, &output_dir_sprites);
