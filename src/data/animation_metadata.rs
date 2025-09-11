@@ -4,7 +4,7 @@ pub struct AnimationInfo {
     pub source: &'static str,
 }
 
-// Animation mapping that maps anim_id to group_idx
+// Animation mapping that connects anim_id to group_idx
 pub const ANIMATION_INFO: &[AnimationInfo] = &[
     AnimationInfo {
         id: 0,
@@ -61,10 +61,11 @@ pub const ANIMATION_INFO: &[AnimationInfo] = &[
         name: "Hop",
         source: "m_attack",
     },
+    // Some Pokemon's charge animation is only in m_attack or onlny in monster
     AnimationInfo {
         id: 11,
         name: "Charge",
-        source: "monster",
+        source: "either",
     },
     AnimationInfo {
         id: 12,

@@ -76,7 +76,7 @@ pub struct MonsterStats {
     pub base_hp: u16,
     pub base_atk: u8,
     pub base_sp_atk: u8,
-    pub base_def: u8, 
+    pub base_def: u8,
     pub base_sp_def: u8,
 }
 
@@ -85,6 +85,8 @@ pub struct MonsterEntry {
     pub md_index: u32,
     pub national_pokedex_number: u16,
     pub sprite_index: i16,
+    pub gender: u8,
+    pub base_form_index: u16,
     pub stats: MonsterStats,
     pub type_primary: PokemonType,
     pub type_secondary: PokemonType,
@@ -92,7 +94,6 @@ pub struct MonsterEntry {
     pub shadow_size: ShadowSize,
 }
 
-/// Container for all monster data entries
 #[derive(Debug)]
 pub struct MonsterData {
     pub entries: Vec<MonsterEntry>,
@@ -109,7 +110,7 @@ impl MonsterData {
         }
 
         let number_entries = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        
+
         let expected_size = 8 + (number_entries as usize * MD_ENTRY_LEN);
         if data.len() < expected_size {
             return Err(io::Error::new(
@@ -122,25 +123,32 @@ impl MonsterData {
         let mut entries = Vec::with_capacity(number_entries as usize);
         for i in 0..number_entries {
             let start = 8 + (i as usize * MD_ENTRY_LEN);
-            
-            let national_pokedex_number = u16::from_le_bytes([data[start + 0x04], data[start + 0x05]]);
+
+            // Access the entry information
+            let national_pokedex_number =
+                u16::from_le_bytes([data[start + 0x04], data[start + 0x05]]);
             let sprite_index = i16::from_le_bytes([data[start + 0x10], data[start + 0x11]]);
+            let gender = data[start + 0x12];
+            let base_form_index = u16::from_le_bytes([data[start + 0x32], data[start + 0x33]]);
+
             let type_primary = PokemonType::from(data[start + 0x14]);
             let type_secondary = PokemonType::from(data[start + 0x15]);
-            
+
             let base_hp = u16::from_le_bytes([data[start + 0x20], data[start + 0x21]]);
             let base_atk = data[start + 0x24];
             let base_sp_atk = data[start + 0x25];
             let base_def = data[start + 0x26];
             let base_sp_def = data[start + 0x27];
-            
+
             let weight = i16::from_le_bytes([data[start + 0x28], data[start + 0x29]]);
             let shadow_size = ShadowSize::from(data[start + 0x2E] as i8);
-            
+
             entries.push(MonsterEntry {
                 md_index: i,
                 national_pokedex_number,
                 sprite_index,
+                gender,
+                base_form_index,
                 stats: MonsterStats {
                     base_hp,
                     base_atk,
