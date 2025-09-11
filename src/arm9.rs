@@ -79,7 +79,7 @@ pub fn load_overlay_table(
                 );
             }
             Err(e) => {
-                if ids_to_load.map_or(false, |ids| ids.contains(&overlay_id)) {
+                if ids_to_load.is_some_and(|ids| ids.contains(&overlay_id)) {
                     eprintln!(
                         "ERROR: Failed to load requested overlay {}: {}",
                         overlay_id, e

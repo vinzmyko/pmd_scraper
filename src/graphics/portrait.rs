@@ -4,14 +4,13 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    usize,
 };
-
-use crate::containers::{compression::at4px::At4pxContainer, ContainerHandler};
 
 use image::RgbaImage;
 use oxipng::{self, InFile, OutFile};
 use serde_json;
+
+use crate::containers::{compression::at4px::At4pxContainer, ContainerHandler};
 
 /// Represents a single portrait image from the KAO file
 #[derive(Clone, Debug)]
@@ -74,9 +73,7 @@ impl Portrait {
         let pixel_count = std::cmp::min(expected_pixels, actual_pixels);
 
         // Process decompressed data (each byte contains two 4-bit pixels)
-        for byte_idx in 0..(pixel_count / 2) {
-            let byte = decompressed[byte_idx];
-
+        for (byte_idx, &byte) in decompressed.iter().enumerate().take(pixel_count / 2) {
             let colour_idx1 = byte & 0xF; // Low nibble
             let colour_idx2 = (byte >> 4) & 0xF; // High nibble
 
@@ -87,7 +84,7 @@ impl Portrait {
                 let tile_id = idx / PIXELS_PER_TILE;
 
                 if tile_id >= tile_positions.len() {
-                    continue; // Protect against out-of-bounds error
+                    continue; // So no out of bounds error
                 }
 
                 // Get pre-calculated tile position
@@ -102,14 +99,14 @@ impl Portrait {
                 let final_y = tile_y + in_tile_y;
 
                 if final_x >= IMG_DIM || final_y >= IMG_DIM {
-                    continue; // Protect against out-of-bounds
+                    continue; // So no out of bounds error
                 }
 
                 // Get colour index based on which nibble we're processing
-                let colour_idx = if i == 0 { colour_idx1 } else {colour_idx2 } as usize;
+                let colour_idx = if i == 0 { colour_idx1 } else { colour_idx2 } as usize;
 
                 if colour_idx >= self.palette.len() {
-                    continue; // Protect against out-of-bounds
+                    continue;
                 }
 
                 // Calculate position in the RGBA buffer, 4 bytes per pixel
@@ -236,9 +233,8 @@ pub fn create_portrait_atlas(
 
     // Calculate optimal layout
     let frames_per_row = (total_portrait_count as f32).sqrt().ceil() as u32;
-    let rows = (total_portrait_count as u32 + frames_per_row - 1) / frames_per_row;
+    let rows = (total_portrait_count as u32).div_ceil(frames_per_row);
 
-    // Calculate dimensions (using PORTRAIT_SIZE constant)
     let atlas_width = frames_per_row * PORTRAIT_SIZE as u32;
     let atlas_height = rows * PORTRAIT_SIZE as u32;
 
@@ -249,7 +245,7 @@ pub fn create_portrait_atlas(
 
     let mut atlas = RgbaImage::new(atlas_width, atlas_height);
 
-    // Initialize to transparent
+    // Initialise to transparent
     for pixel in atlas.pixels_mut() {
         *pixel = image::Rgba([0, 0, 0, 0]);
     }
@@ -349,12 +345,10 @@ pub fn create_portrait_atlas(
         .save(output_path)
         .map_err(|e| format!("Failed to save atlas image: {}", e))?;
 
-    // Apply optimization
-    println!("Optimizing PNG for smaller file size...");
-    if let Err(e) = optimise_portrait_png(output_path, true) {
-        println!("Warning: PNG optimization failed: {}", e);
+    if let Err(e) = optimise_portrait_png(output_path) {
+        println!("Warning: PNG optimisation failed: {}", e);
     } else {
-        println!("PNG optimization complete");
+        println!("PNG optimisation complete");
     }
 
     Ok(atlas)
@@ -385,7 +379,7 @@ fn save_metadata(metadata: &HashMap<String, (usize, usize)>, path: &PathBuf) -> 
 }
 
 /// Optimises a PNG file using oxipng for better compression
-fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), String> {
+fn optimise_portrait_png(path: &Path) -> Result<(), String> {
     let temp_path = path.with_extension("temp.png");
 
     // If the file was already saved at this path, rename it to temp
@@ -396,8 +390,7 @@ fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), Strin
         return Err("Image file not found at expected path".to_string());
     }
 
-    let preset = if max_compression { 6 } else { 3 };
-    let mut options = oxipng::Options::from_preset(preset);
+    let mut options = oxipng::Options::from_preset(4);
 
     options.bit_depth_reduction = true;
 
@@ -406,7 +399,7 @@ fn optimise_portrait_png(path: &Path, max_compression: bool) -> Result<(), Strin
         &OutFile::Path(Some(path.to_path_buf())),
         &options,
     )
-    .map_err(|e| format!("PNG optimization failed: {}", e))?;
+    .map_err(|e| format!("PNG optimisation failed: {}", e))?;
 
     // Remove the temporary file
     if let Err(e) = std::fs::remove_file(&temp_path) {

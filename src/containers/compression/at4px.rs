@@ -1,7 +1,7 @@
 use crate::containers::{CompressionContainer, ContainerHandler};
 use std::io::{self};
 
-// At4pxContainer is a specialised compression container used for compressed image data for Pokémon portrait sprites. It uses a bespoke
+// At4pxContainer is a specialised compression container used for compressed image data for Pokemon portrait sprites. It uses a bespoke
 // implementation of the PX algorithm to decompress the container into image data.
 
 pub const AT4PX_CONTAINER_HEADER_SIZE: usize = 0x12;

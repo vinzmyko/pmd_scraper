@@ -12,8 +12,6 @@ use crate::{
     rom::Rom,
 };
 
-use serde_json;
-
 pub struct AnimationInfoExtractor<'a> {
     rom: &'a mut Rom,
 }
@@ -47,10 +45,10 @@ impl<'a> AnimationInfoExtractor<'a> {
 
         self.save_trap_animations_json(&json_dir, &anim_data.trap_table)?;
         self.save_item_animations_json(&json_dir, &anim_data.item_table)?;
-        self.save_move_animations_json(&json_dir, &anim_data)?;
+        self.save_move_animations_json(&json_dir, anim_data)?;
         self.save_effect_animations_json(&json_dir, &anim_data.effect_table)?;
 
-        self.save_animation_summary(&json_dir, &anim_data)?;
+        self.save_animation_summary(&json_dir, anim_data)?;
 
         println!("All animation data saved to {}", json_dir.display());
         Ok(json_dir)
@@ -63,7 +61,7 @@ impl<'a> AnimationInfoExtractor<'a> {
             File::create(&file_path).map_err(|e| format!("Failed to create traps.json: {}", e))?;
 
         serde_json::to_writer_pretty(file, &trap_table)
-            .map_err(|e| format!("Failed to serialize trap animations: {}", e))?;
+            .map_err(|e| format!("Failed to serialise trap animations: {}", e))?;
 
         println!(
             "Trap animations saved to {} ({} entries)",
@@ -79,7 +77,7 @@ impl<'a> AnimationInfoExtractor<'a> {
             File::create(&file_path).map_err(|e| format!("Failed to create items.json: {}", e))?;
 
         serde_json::to_writer_pretty(file, &item_table)
-            .map_err(|e| format!("Failed to serialize item animations: {}", e))?;
+            .map_err(|e| format!("Failed to serialise item animations: {}", e))?;
 
         println!(
             "Item animations saved to {} ({} entries)",
@@ -104,7 +102,7 @@ impl<'a> AnimationInfoExtractor<'a> {
             .collect();
 
         serde_json::to_writer_pretty(file, &move_map_str)
-            .map_err(|e| format!("Failed to serialize move animations: {}", e))?;
+            .map_err(|e| format!("Failed to serialise move animations: {}", e))?;
 
         println!(
             "Move animations saved to {} ({} entries)",
@@ -131,7 +129,7 @@ impl<'a> AnimationInfoExtractor<'a> {
             .collect();
 
         serde_json::to_writer_pretty(file, &effect_map)
-            .map_err(|e| format!("Failed to serialize effect animations: {}", e))?;
+            .map_err(|e| format!("Failed to serialise effect animations: {}", e))?;
 
         println!(
             "Effect animations saved to {} ({} entries)",
@@ -162,7 +160,7 @@ impl<'a> AnimationInfoExtractor<'a> {
         });
 
         serde_json::to_writer_pretty(file, &summary)
-            .map_err(|e| format!("Failed to serialize animation summary: {}", e))?;
+            .map_err(|e| format!("Failed to serialise animation summary: {}", e))?;
 
         println!("Animation summary saved to {}", file_path.display());
         Ok(())

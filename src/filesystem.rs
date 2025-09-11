@@ -1,4 +1,4 @@
-use std::{collections::HashMap, usize};
+use std::collections::HashMap;
 
 // A FatEntry contains the file location
 pub struct FatEntry {
@@ -281,7 +281,7 @@ impl FileNameTable {
                         // Add to directory structure (parent -> children relationship)
                         self.directory_structure
                             .entry(dir_id)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(child_dir_id);
                     }
                 }
