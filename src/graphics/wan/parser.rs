@@ -3,18 +3,22 @@
 //! This module provides functions to parse WAN files from binary data,
 //! supporting both character and effect WAN variants.
 
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::{
+    collections::HashMap,
+    io::{Cursor, Read, Seek, SeekFrom},
+};
 
 use crate::{
-    binary_utils::{read_u32_le, read_u16_le, read_u8, read_i16_le},
+    binary_utils::{read_i16_le, read_u16_le, read_u32_le, read_u8},
     graphics::{
-    wan::{
-        model::{
-            Animation, FrameOffset, ImgPiece, MetaFrame, MetaFramePiece, SequenceFrame, WanFile
+        wan::{
+            model::{
+                Animation, FrameOffset, ImgPiece, MetaFrame, MetaFramePiece, SequenceFrame, WanFile,
+            },
+            AnimationStructure, MetaFramePieceArgs, PaletteList, WanError,
         },
-        WanError
-    }, WanType,
-    }
+        WanType,
+    },
 };
 
 /// Parse WAN file from SIR0 content that has already been extracted
@@ -24,16 +28,11 @@ pub fn parse_wan_from_sir0_content(
     wan_type: WanType,
 ) -> Result<WanFile, WanError> {
     let mut cursor = Cursor::new(content);
-    let buffer_size = content.len() as u64;
-
-    // Read from the data pointer position
-    cursor
-        .seek(SeekFrom::Start(data_pointer as u64))
-        .map_err(|e| WanError::Io(e))?;
+    cursor.seek(SeekFrom::Start(data_pointer as u64))?;
 
     match wan_type {
-        WanType::Character => parse_character_wan(&mut cursor, buffer_size),
-        WanType::Effect => parse_effect_wan(&mut cursor, buffer_size),
+        WanType::Character => parse_character_wan(&mut cursor, content.len() as u64),
+        WanType::Effect => parse_effect_wan(content, data_pointer),
     }
 }
 
@@ -52,8 +51,8 @@ pub fn parse_character_wan(
         )));
     }
 
-    let ptr_anim_info = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let ptr_image_data_info = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+    let ptr_anim_info = read_u32_le(cursor).map_err(WanError::Io)?;
+    let ptr_image_data_info = read_u32_le(cursor).map_err(WanError::Io)?;
 
     // Validate pointers
     if ptr_anim_info == 0 || ptr_image_data_info == 0 {
@@ -70,7 +69,7 @@ pub fn parse_character_wan(
     }
 
     // Should be 1 for character sprites
-    let img_type = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+    let img_type = read_u16_le(cursor).map_err(WanError::Io)?;
     if img_type != 1 {
         return Err(WanError::InvalidDataStructure(format!(
             "Expected image type 1 for character sprite, got {}",
@@ -79,7 +78,7 @@ pub fn parse_character_wan(
     }
 
     // Skip unknown value
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+    read_u16_le(cursor).map_err(WanError::Io)?;
 
     // Read image data info with bounds checking
     if ptr_image_data_info as u64 >= buffer_size {
@@ -91,10 +90,10 @@ pub fn parse_character_wan(
 
     cursor
         .seek(SeekFrom::Start(ptr_image_data_info as u64))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
-    let ptr_image_data_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let ptr_palette_info = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+    let ptr_image_data_table = read_u32_le(cursor).map_err(WanError::Io)?;
+    let ptr_palette_info = read_u32_le(cursor).map_err(WanError::Io)?;
 
     // Validate pointers
     if ptr_image_data_table == 0 || ptr_palette_info == 0 {
@@ -112,19 +111,19 @@ pub fn parse_character_wan(
     }
 
     // Skip unknown values Unk#13, Is256ColourSpr, Unk#11
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#13 - ALWAYS 0
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Is256ColourSpr - ALWAYS 0
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#11 - ALWAYS 1 unless empty
+    read_u16_le(cursor).map_err(WanError::Io)?; // Unk#13 - ALWAYS 0
+    read_u16_le(cursor).map_err(WanError::Io)?; // Is256ColourSpr - ALWAYS 0
+    read_u16_le(cursor).map_err(WanError::Io)?; // Unk#11 - ALWAYS 1 unless empty
 
     // Read number of images
-    let num_imgs = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+    let num_imgs = read_u16_le(cursor).map_err(WanError::Io)?;
 
     // Read palette info with bounds checking
     cursor
         .seek(SeekFrom::Start(ptr_palette_info as u64))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
-    let ptr_palette_data_block = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+    let ptr_palette_data_block = read_u32_le(cursor).map_err(WanError::Io)?;
 
     // Bounds check palette data block
     if ptr_palette_data_block as u64 >= buffer_size {
@@ -135,10 +134,10 @@ pub fn parse_character_wan(
     }
 
     // Skip unknown values (Unk#3, colours_per_row, Unk#4, Unk#5)
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#3 - ALWAYS 0
-    let _colours_per_row_num = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#4 - ALWAYS 0
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#5 - ALWAYS 255
+    read_u16_le(cursor).map_err(WanError::Io)?; // Unk#3 - ALWAYS 0
+    let _colours_per_row_num = read_u16_le(cursor).map_err(WanError::Io)?;
+    read_u16_le(cursor).map_err(WanError::Io)?; // Unk#4 - ALWAYS 0
+    read_u16_le(cursor).map_err(WanError::Io)?; // Unk#5 - ALWAYS 255
 
     let palette_data = match read_palette_data(
         cursor,
@@ -157,12 +156,12 @@ pub fn parse_character_wan(
     // Read image data table
     cursor
         .seek(SeekFrom::Start(ptr_image_data_table as u64))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
     // Read pointers to image data
     let mut ptr_imgs = Vec::with_capacity(num_imgs as usize);
     for _ in 0..num_imgs {
-        let ptr = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+        let ptr = read_u32_le(cursor).map_err(WanError::Io)?;
         ptr_imgs.push(ptr);
     }
 
@@ -181,22 +180,25 @@ pub fn parse_character_wan(
         return Ok(WanFile {
             img_data,
             frame_data: Vec::new(),
-            animation_groups: Vec::new(),
+            animations: AnimationStructure::Character(Vec::new()),
             body_part_offset_data: Vec::new(),
             custom_palette: palette_data,
+            effect_specific_palette: None,
             sdw_size: 1,
             wan_type: WanType::Character,
+            palette_offset: 0,
+            tile_lookup_8bpp: None,
         });
     }
 
     // Read animation info
     cursor
         .seek(SeekFrom::Start(ptr_anim_info as u64))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
-    let ptr_meta_frames_ref_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let ptr_offsets_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let ptr_anim_group_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+    let ptr_meta_frames_ref_table = read_u32_le(cursor).map_err(WanError::Io)?;
+    let ptr_offsets_table = read_u32_le(cursor).map_err(WanError::Io)?;
+    let ptr_anim_group_table = read_u32_le(cursor).map_err(WanError::Io)?;
 
     // Bounds check these pointers
     if ptr_meta_frames_ref_table as u64 >= buffer_size
@@ -209,11 +211,11 @@ pub fn parse_character_wan(
         )));
     }
 
-    let anim_groups_num = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+    let anim_groups_num = read_u16_le(cursor).map_err(WanError::Io)?;
 
     // Skip unknown values (Unk#6 through Unk#10)
     for _ in 0..5 {
-        read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+        read_u16_le(cursor).map_err(WanError::Io)?;
     }
 
     // Read animation groups
@@ -253,8 +255,7 @@ pub fn parse_character_wan(
 
     // Read animation sequences
     let animation_data =
-        match read_animation_sequences(cursor, &animation_groups, &anim_sequences)
-        {
+        match read_animation_sequence_character(cursor, &animation_groups, &anim_sequences) {
             Ok(data) => data,
             Err(e) => {
                 println!("  - Warning: Failed to read animation sequences: {:?}", e);
@@ -267,213 +268,464 @@ pub fn parse_character_wan(
     Ok(WanFile {
         img_data,
         frame_data,
-        animation_groups: animation_data,
+        animations: AnimationStructure::Character(animation_data),
         body_part_offset_data: offset_data,
         custom_palette: palette_data,
+        effect_specific_palette: None,
         sdw_size: 1,
         wan_type: WanType::Character,
+        palette_offset: 0,
+        tile_lookup_8bpp: None,
     })
 }
 
-/// Parse an effect WAN file
-pub fn parse_effect_wan(
+fn read_animation_sequence_character(
     cursor: &mut Cursor<&[u8]>,
-    buffer_size: u64,
-) -> Result<WanFile, WanError> {
-    // Read WAN header
-    let ptr_anim_info = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let ptr_image_data_info = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+    animation_groups: &[Vec<u32>],
+    _anim_sequences: &[u32],
+) -> Result<Vec<Vec<Animation>>, WanError> {
+    let buffer_size = cursor.get_ref().len() as u64;
+    let mut all_animations = Vec::new();
 
-    // Validate pointers
-    if ptr_anim_info == 0 || ptr_image_data_info == 0 {
-        return Err(WanError::InvalidDataStructure(
-            "Null pointer in WAN header".to_string(),
-        ));
-    }
+    // The character animation structure is a set of groups, and each group
+    // contains pointers to animations for different directions
+    for group in animation_groups {
+        let mut group_animations = Vec::new();
 
-    // Should be 2 or 3 for effect sprites
-    let img_type = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-    if img_type != 2 && img_type != 3 {
-        println!(
-            "  - Warning: Effect WAN with unexpected imgType {}",
-            img_type
-        );
-    }
+        for &ptr in group {
+            if ptr == 0 {
+                group_animations.push(Animation::empty());
+                continue;
+            }
+            if ptr as u64 >= buffer_size {
+                group_animations.push(Animation::empty());
+                continue;
+            }
 
-    // Skip unknown value (Unk#12)
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+            cursor.seek(SeekFrom::Start(ptr as u64))?;
+            let mut sequence_frames = Vec::new();
 
-    // Read image data info
-    cursor
-        .seek(SeekFrom::Start(ptr_image_data_info as u64))
-        .map_err(|e| WanError::Io(e))?;
+            loop {
+                if cursor.position() + 12 > buffer_size {
+                    break;
+                }
 
-    let ptr_image_data_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let ptr_palette_info = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
+                // Character sequence frames are 12 bytes long
+                let frame_dur = read_u8(cursor)?;
+                if frame_dur == 0 {
+                    cursor.seek(SeekFrom::Current(11))?;
+                    break;
+                }
+                let flag = read_u8(cursor)?;
+                let frame_index = read_u16_le(cursor)?;
+                let spr_off_x = read_i16_le(cursor)?;
+                let spr_off_y = read_i16_le(cursor)?;
+                let sdw_off_x = read_i16_le(cursor)?;
+                let sdw_off_y = read_i16_le(cursor)?;
 
-    // Validate pointers
-    if ptr_image_data_table == 0 || ptr_palette_info == 0 {
-        return Err(WanError::InvalidDataStructure(
-            "Null pointer in Image Data Info".to_string(),
-        ));
-    }
-
-    // Effect WAN may use 256 colours
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#13 - ALWAYS 1
-    let is_256_colour = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?; // Unk#11
-
-    let img_num = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Read palette info
-    cursor
-        .seek(SeekFrom::Start(ptr_palette_info as u64))
-        .map_err(|e| WanError::Io(e))?;
-
-    let ptr_palette_data_block = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Unk#3 - Usually 1 except for effect_0001 - 0
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Total colours - but may not include all colours in the block
-    let _total_colours = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Unk#4 - ALWAYS 1 except for effect_0001 - 0
-    read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Unk#5 - palette offset, ALWAYS 269 except for effect_0001 and effect_0262 - 255
-    let _palette_offset = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Read palette data for Effect WAN
-    let palette_data = match read_effect_palette_data(
-        cursor,
-        ptr_palette_data_block as u64,
-        ptr_palette_info as u64,
-        is_256_colour as usize,
-    ) {
-        Ok(data) => data,
-        Err(e) => {
-            println!("  - Warning: Failed to read effect palette data: {:?}", e);
-            vec![vec![(0, 0, 0, 0); 16]]
+                sequence_frames.push(SequenceFrame::new(
+                    frame_index,
+                    frame_dur,
+                    flag,
+                    (spr_off_x, spr_off_y),
+                    (sdw_off_x, sdw_off_y),
+                ));
+            }
+            group_animations.push(Animation::new(sequence_frames));
         }
-    };
-
-    // Read image data table
-    cursor
-        .seek(SeekFrom::Start(ptr_image_data_table as u64))
-        .map_err(|e| WanError::Io(e))?;
-
-    // Read pointers to image data
-    let mut ptr_imgs = Vec::with_capacity(img_num as usize);
-    for _ in 0..img_num {
-        let ptr = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-        ptr_imgs.push(ptr);
+        all_animations.push(group_animations);
     }
 
-    // Determine if we use the imgType 3 handling
-    let img_data = if img_type == 3 {
-        match read_effect_imgtype3_data(
-            cursor,
-            &ptr_imgs[0..1],
-            buffer_size,
-            is_256_colour as usize,
-        ) {
-            Ok(data) => data,
-            Err(e) => {
-                println!("  - Warning: Failed to read effect imgType3 data: {:?}", e);
-                Vec::new()
+    Ok(all_animations)
+}
+
+fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
+    let mut cursor = Cursor::new(data);
+    cursor.seek(SeekFrom::Start(ptr_wan as u64))?;
+
+    let ptr_anim_info = read_u32_le(&mut cursor)?;
+    let ptr_image_data_info = read_u32_le(&mut cursor)?;
+
+    if ptr_image_data_info == 0 && ptr_anim_info == 0 {
+        return Err(WanError::InvalidDataStructure(
+            "Null AnimInfo and ImageDataInfo pointers".to_string(),
+        ));
+    }
+
+    let mut custom_palette = vec![];
+    let mut img_data = vec![];
+    let mut is_256_colour_val = 0;
+    let mut palette_offset = 0;
+
+    if ptr_image_data_info > 0 {
+        cursor.seek(SeekFrom::Start(ptr_image_data_info as u64))?;
+        let ptr_image_data_table = read_u32_le(&mut cursor)?;
+        let ptr_palette_info = read_u32_le(&mut cursor)?;
+        read_u16_le(&mut cursor)?;
+        is_256_colour_val = read_u16_le(&mut cursor)?;
+        read_u16_le(&mut cursor)?;
+        let nb_imgs = read_u16_le(&mut cursor)?;
+        if ptr_palette_info > 0 {
+            cursor.seek(SeekFrom::Start(ptr_palette_info as u64))?;
+            let ptr_palette_data_block = read_u32_le(&mut cursor)?;
+            read_u16_le(&mut cursor)?;
+            read_u16_le(&mut cursor)?;
+            read_u16_le(&mut cursor)?;
+            let unk5 = read_u16_le(&mut cursor)?;
+            palette_offset = unk5 % 16;
+            custom_palette = read_effect_palette_data(
+                &mut cursor,
+                ptr_palette_data_block as u64,
+                ptr_palette_info as u64,
+                is_256_colour_val as usize,
+            )?;
+        }
+        if ptr_image_data_table > 0 {
+            cursor.seek(SeekFrom::Start(ptr_image_data_table as u64))?;
+            let mut ptr_imgs = Vec::with_capacity(nb_imgs as usize);
+            for _ in 0..nb_imgs {
+                ptr_imgs.push(read_u32_le(&mut cursor)?);
+            }
+            if is_256_colour_val != 0 {
+                // Create one ImgPiece per image chunk
+                for &ptr_img in &ptr_imgs {
+                    if ptr_img == 0 {
+                        img_data.push(ImgPiece { img_px: vec![] });
+                        continue;
+                    }
+                    cursor.seek(SeekFrom::Start(ptr_img as u64))?;
+                    let mut chunk_pixels = Vec::new();
+                    loop {
+                        if cursor.position() + 12 > data.len() as u64 {
+                            break;
+                        }
+                        let ptr_pix_src = read_u32_le(&mut cursor)?;
+                        let amt = read_u16_le(&mut cursor)?;
+                        if ptr_pix_src == 0 && amt == 0 {
+                            break;
+                        }
+                        cursor.seek(SeekFrom::Current(6))?;
+                        if ptr_pix_src > 0 && (ptr_pix_src as u64) < data.len() as u64 {
+                            let current_pos = cursor.position();
+                            cursor.seek(SeekFrom::Start(ptr_pix_src as u64))?;
+                            let read_size = (amt as usize).min(data.len() - ptr_pix_src as usize);
+                            chunk_pixels.extend_from_slice(
+                                &data[ptr_pix_src as usize..ptr_pix_src as usize + read_size],
+                            );
+                            cursor.seek(SeekFrom::Start(current_pos))?;
+                        }
+                    }
+                    img_data.push(ImgPiece {
+                        img_px: chunk_pixels,
+                    }); // One piece per chunk
+                }
+            } else {
+                for &ptr_img in &ptr_imgs {
+                    if ptr_img == 0 {
+                        img_data.push(ImgPiece { img_px: vec![] });
+                        continue;
+                    }
+                    cursor.seek(SeekFrom::Start(ptr_img as u64))?;
+                    let mut tile_pixels = Vec::new();
+                    loop {
+                        if cursor.position() + 12 > data.len() as u64 {
+                            break;
+                        }
+                        let ptr_pix_src = read_u32_le(&mut cursor)?;
+                        let amt = read_u16_le(&mut cursor)?;
+                        if ptr_pix_src == 0 && amt == 0 {
+                            break;
+                        }
+                        cursor.seek(SeekFrom::Current(6))?;
+                        if ptr_pix_src > 0 && (ptr_pix_src as u64) < data.len() as u64 {
+                            let current_pos = cursor.position();
+                            cursor.seek(SeekFrom::Start(ptr_pix_src as u64))?;
+                            let read_size = (amt as usize).min(data.len() - ptr_pix_src as usize);
+                            tile_pixels.extend_from_slice(
+                                &data[ptr_pix_src as usize..ptr_pix_src as usize + read_size],
+                            );
+                            cursor.seek(SeekFrom::Start(current_pos))?;
+                        }
+                    }
+                    img_data.push(ImgPiece {
+                        img_px: tile_pixels,
+                    });
+                }
             }
         }
+    }
+
+    let tile_lookup_8bpp = if is_256_colour_val != 0 {
+        Some(build_8bpp_tile_lookup(&img_data))
     } else {
-        match read_image_data(cursor, &ptr_imgs, buffer_size) {
-            Ok(data) => data,
-            Err(e) => {
-                println!("  - Warning: Failed to read effect image data: {:?}", e);
-                Vec::new()
-            }
-        }
+        None
     };
 
-    // Some effect WAN files don't have animation data
-    if ptr_anim_info == 0 {
-        return Ok(WanFile {
-            img_data,
-            frame_data: Vec::new(),
-            animation_groups: Vec::new(),
-            body_part_offset_data: Vec::new(),
-            custom_palette: palette_data,
-            sdw_size: 1,
-            wan_type: WanType::Effect,
-        });
+    let mut frame_data = vec![];
+    let mut animations = vec![];
+
+    if ptr_anim_info > 0 {
+        cursor.seek(SeekFrom::Start(ptr_anim_info as u64))?;
+        let ptr_meta_frames_ref_table = read_u32_le(&mut cursor)?;
+        read_u32_le(&mut cursor)?;
+        let ptr_anim_group_table = read_u32_le(&mut cursor)?;
+        let nb_anim_groups = read_u16_le(&mut cursor)?;
+
+        // Parse the animation group table to get the list of animation sequence pointers
+        cursor.seek(SeekFrom::Start(ptr_anim_group_table as u64))?;
+        let mut all_anim_pointers = vec![];
+        for _ in 0..nb_anim_groups {
+            let anim_loc = read_u32_le(&mut cursor)?;
+            let anim_length = read_u16_le(&mut cursor)?;
+            read_u16_le(&mut cursor)?;
+
+            if anim_loc > 0 && anim_length > 0 {
+                let current_pos = cursor.position();
+                cursor.seek(SeekFrom::Start(anim_loc as u64))?;
+                for _ in 0..anim_length {
+                    all_anim_pointers.push(read_u32_le(&mut cursor)?);
+                }
+                cursor.seek(SeekFrom::Start(current_pos))?;
+            }
+        }
+
+        // Seek back to the start of the anim group table to get the meta frame table boundary
+        cursor.seek(SeekFrom::Start(ptr_anim_group_table as u64))?;
+        let meta_frames_end_ptr = read_u32_le(&mut cursor)?;
+
+        // Parse the meta-frames.
+        cursor.seek(SeekFrom::Start(ptr_meta_frames_ref_table as u64))?;
+        frame_data =
+            read_effect_meta_frames(&mut cursor, meta_frames_end_ptr, is_256_colour_val != 0)?;
+
+        // Parse the animation sequences
+        let mut temp_anim_map = std::collections::HashMap::new();
+        for &ptr in &all_anim_pointers {
+            if ptr > 0 && !temp_anim_map.contains_key(&ptr) {
+                let sequence = read_animation_sequence(&mut cursor, ptr)?;
+                temp_anim_map.insert(ptr, sequence);
+            }
+        }
+
+        animations = all_anim_pointers
+            .iter()
+            .map(|&ptr| {
+                temp_anim_map
+                    .get(&ptr)
+                    .cloned()
+                    .unwrap_or_else(Animation::empty)
+            })
+            .collect();
     }
-
-    cursor
-        .seek(SeekFrom::Start(ptr_anim_info as u64))
-        .map_err(|e| WanError::Io(e))?;
-
-    let ptr_meta_frames_ref_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    let _ptr_offsets_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    let ptr_anim_group_table = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let nb_anim_groups = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    // Read animation groups
-    let (animation_groups, anim_sequences) = match read_animation_groups(
-        cursor,
-        ptr_anim_group_table as u64,
-        nb_anim_groups as usize,
-    ) {
-        Ok(data) => data,
-        Err(e) => {
-            println!(
-                "  - Warning: Failed to read effect animation groups: {:?}",
-                e
-            );
-            (Vec::new(), Vec::new())
-        }
-    };
-
-    // Read effect meta frames
-    let meta_frames = match read_effect_meta_frames(
-        cursor,
-        ptr_meta_frames_ref_table as u64,
-        ptr_anim_group_table as u64,
-    ) {
-        Ok(frames) => frames,
-        Err(e) => {
-            println!("  - Warning: Failed to read effect meta frames: {:?}", e);
-            Vec::new()
-        }
-    };
-
-    // Effect WAN has no offset data
-    let offset_data = Vec::new();
-
-    // Read animation sequences
-    let animation_data =
-        match read_animation_sequences(cursor, &animation_groups, &anim_sequences)
-        {
-            Ok(data) => data,
-            Err(e) => {
-                println!(
-                    "  - Warning: Failed to read effect animation sequences: {:?}",
-                    e
-                );
-                Vec::new()
-            }
-        };
-
-    let frame_data = meta_frames;
 
     Ok(WanFile {
         img_data,
         frame_data,
-        animation_groups: animation_data,
-        body_part_offset_data: offset_data,
-        custom_palette: palette_data,
+        animations: AnimationStructure::Effect(animations),
+        body_part_offset_data: vec![],
+        custom_palette,
+        effect_specific_palette: None,
         sdw_size: 1,
         wan_type: WanType::Effect,
+        palette_offset,
+        tile_lookup_8bpp,
+    })
+}
+
+fn build_8bpp_tile_lookup(img_data: &[ImgPiece]) -> HashMap<usize, usize> {
+    let mut lookup = HashMap::new();
+    let mut current_byte_pos = 0;
+    let block_size = 128; // 2 * TEX_SIZE * TEX_SIZE for 8bpp
+
+    for (chunk_idx, piece) in img_data.iter().enumerate() {
+        // Map tile position to chunk index
+        let tile_num = current_byte_pos / block_size;
+        lookup.insert(tile_num, chunk_idx);
+
+        current_byte_pos += piece.img_px.len();
+        // Apply padding to align to next 128-byte boundary
+        if current_byte_pos % block_size != 0 {
+            current_byte_pos = ((current_byte_pos / block_size) + 1) * block_size;
+        }
+    }
+    lookup
+}
+
+fn read_animation_sequence(cursor: &mut Cursor<&[u8]>, ptr: u32) -> Result<Animation, WanError> {
+    let original_pos = cursor.position();
+    cursor.seek(SeekFrom::Start(ptr as u64))?;
+    let mut frames = Vec::new();
+    loop {
+        if cursor.position() + 12 > cursor.get_ref().len() as u64 {
+            break;
+        }
+
+        let _pos = cursor.position();
+        let frame_dur = read_u16_le(cursor)?;
+
+        if frame_dur == 0 {
+            break;
+        }
+
+        let frame_index = read_u16_le(cursor)?;
+        let spr_off_x = read_u16_le(cursor)?;
+        let spr_off_y = read_u16_le(cursor)?;
+        read_u16_le(cursor)?;
+        read_u16_le(cursor)?;
+
+        frames.push(SequenceFrame::new(
+            frame_index,
+            frame_dur as u8,
+            0,
+            (spr_off_x as i16, spr_off_y as i16),
+            (0, 0),
+        ));
+    }
+    cursor.seek(SeekFrom::Start(original_pos))?;
+    Ok(Animation::new(frames))
+}
+
+fn read_effect_meta_frames(
+    cursor: &mut Cursor<&[u8]>,
+    end_ptr: u32,
+    is_256_colour_file: bool,
+) -> Result<Vec<MetaFrame>, WanError> {
+    let mut ptrs = Vec::new();
+    let end_pos = end_ptr as u64;
+    let read_end = end_pos.min(cursor.get_ref().len() as u64);
+
+    while cursor.position() < read_end {
+        if cursor.position() + 4 > read_end {
+            break;
+        }
+        let ptr = read_u32_le(cursor)?;
+        ptrs.push(ptr);
+    }
+
+    let mut meta_frames = Vec::with_capacity(ptrs.len());
+
+    for ptr in ptrs {
+        if ptr as u64 >= cursor.get_ref().len() as u64 {
+            meta_frames.push(MetaFrame { pieces: vec![] });
+            continue;
+        }
+
+        cursor.seek(SeekFrom::Start(ptr as u64))?;
+        let mut pieces = Vec::new();
+
+        loop {
+            if cursor.position() + 10 > cursor.get_ref().len() as u64 {
+                break;
+            }
+
+            cursor.read_exact(&mut [0u8; 3])?;
+            let _draw_value = read_u8(cursor)?;
+            let y_data = read_u16_le(cursor)?;
+            let x_data = read_u16_le(cursor)?;
+            let tile_num = read_u8(cursor)?;
+            let palette_data = read_u8(cursor)?;
+
+            let y_offset = (y_data % 1024) as i16;
+            let x_offset = (x_data % 512) as i16;
+
+            let dim_data = x_data / 2048;
+            let is_last = (dim_data % 2) == 1;
+            let dim_type = y_data / 16384;
+            let h_flip = (dim_data / 2 % 2) == 1;
+            let v_flip = (dim_data / 4 % 2) == 1;
+            let resolution_idx = (dim_type * 4 + dim_data / 8) as usize;
+            let palette_index = (palette_data / 16) as u8;
+
+            pieces.push(MetaFramePiece::new(MetaFramePieceArgs {
+                tile_num: tile_num as u16,
+                palette_index,
+                h_flip,
+                v_flip,
+                x_offset,
+                y_offset,
+                resolution_idx,
+                is_256_colour: is_256_colour_file,
+            }));
+
+            if is_last {
+                break;
+            }
+        }
+
+        meta_frames.push(MetaFrame { pieces });
+    }
+    Ok(meta_frames)
+}
+
+/// Parse WAN file focusing only on palette data (for special palette-only files like effect.bin[292])
+pub fn parse_wan_palette_only(content: &[u8], data_pointer: u32) -> Result<WanFile, WanError> {
+    let mut cursor = Cursor::new(content);
+    let buffer_size = content.len() as u64;
+    cursor.seek(SeekFrom::Start(data_pointer as u64))?;
+
+    let _ptr_anim_info = read_u32_le(&mut cursor)?;
+    let ptr_image_data_info = read_u32_le(&mut cursor)?;
+
+    if ptr_image_data_info == 0 || (ptr_image_data_info as u64) >= buffer_size {
+        return Err(WanError::InvalidDataStructure(format!(
+            "Invalid ptr_image_data_info (0x{:X})",
+            ptr_image_data_info
+        )));
+    }
+
+    cursor.seek(SeekFrom::Start(ptr_image_data_info as u64))?;
+    let _ptr_image_data_table = read_u32_le(&mut cursor)?;
+    let ptr_palette_info = read_u32_le(&mut cursor)?;
+    read_u16_le(&mut cursor)?; // unk13
+    let is_256_colour_val = read_u16_le(&mut cursor)?;
+
+    if ptr_palette_info == 0 || (ptr_palette_info as u64) >= buffer_size {
+        return Err(WanError::InvalidDataStructure(format!(
+            "Invalid ptr_palette_info (0x{:X})",
+            ptr_palette_info
+        )));
+    }
+
+    cursor.seek(SeekFrom::Start(ptr_palette_info as u64))?;
+    let ptr_palette_data_block = read_u32_le(&mut cursor)?;
+    read_u16_le(&mut cursor)?; // Unk3
+    read_u16_le(&mut cursor)?; // total_colours_header
+    read_u16_le(&mut cursor)?; // Unk4
+    let palette_offset_info = read_u16_le(&mut cursor)?;
+
+    if ptr_palette_data_block == 0 || (ptr_palette_data_block as u64) >= buffer_size {
+        return Err(WanError::InvalidDataStructure(format!(
+            "Invalid ptr_palette_data_block (0x{:X})",
+            ptr_palette_data_block
+        )));
+    }
+
+    let palette_end_ptr = content.len() as u64;
+
+    let palette_data = read_effect_palette_data(
+        &mut cursor,
+        ptr_palette_data_block as u64,
+        palette_end_ptr,
+        is_256_colour_val as usize,
+    )?;
+
+    if palette_data.is_empty() {
+        return Err(WanError::InvalidDataStructure(
+            "Palette data parsed as empty in palette-only mode".to_string(),
+        ));
+    }
+
+    Ok(WanFile {
+        img_data: Vec::new(),
+        frame_data: Vec::new(),
+        animations: AnimationStructure::Effect(Vec::new()),
+        body_part_offset_data: Vec::new(),
+        custom_palette: palette_data,
+        effect_specific_palette: None,
+        sdw_size: 1,
+        wan_type: WanType::Effect,
+        palette_offset: palette_offset_info,
+        tile_lookup_8bpp: None,
     })
 }
 
@@ -483,7 +735,7 @@ fn read_palette_data(
     ptr_palette_data_block: u64,
     end_ptr: u64,
     nb_colours_per_row: usize,
-) -> Result<Vec<Vec<(u8, u8, u8, u8)>>, WanError> {
+) -> Result<PaletteList, WanError> {
     debug_assert!(
         ptr_palette_data_block > 0,
         "Palette data block pointer is zero"
@@ -496,7 +748,6 @@ fn read_palette_data(
 
     let _buffer_size = cursor.get_ref().len() as u64;
 
-    // Seek to palette data block
     cursor
         .seek(SeekFrom::Start(ptr_palette_data_block))
         .map_err(|e| {
@@ -518,7 +769,6 @@ fn read_palette_data(
         let mut palette = Vec::with_capacity(nb_colours_per_row);
 
         for _ in 0..nb_colours_per_row {
-            // Read colours in SkyTemple order - red, blue, green
             let red = read_u8(cursor).map_err(|e| {
                 println!("ERROR: Failed to read red component");
                 WanError::Io(e)
@@ -534,7 +784,6 @@ fn read_palette_data(
                 WanError::Io(e)
             })?;
 
-            // Skip alpha byte
             let _ = read_u8(cursor).map_err(|e| {
                 println!("ERROR: Failed to read alpha component");
                 WanError::Io(e)
@@ -543,7 +792,6 @@ fn read_palette_data(
             palette.push((red, blue, green, 255));
         }
 
-        // Always ensure index 0 is transparent and we have 16 colours
         ensure_complete_palette(&mut palette);
 
         custom_palette.push(palette);
@@ -556,7 +804,7 @@ fn read_palette_data(
         custom_palette.push(default_palette);
     }
 
-    return Ok(custom_palette);
+    Ok(custom_palette)
 }
 
 /// Ensure a palette has all 16 colours, without modifying existing colours
@@ -565,9 +813,8 @@ fn ensure_complete_palette(palette: &mut Vec<(u8, u8, u8, u8)>) {
         palette.push((0, 0, 0, 0));
     }
 
-    // If palette has less than 16 colours, pad with better defaults
     if palette.len() < 16 {
-        let default_colours = [
+        let default_colours: [(u8, u8, u8, u8); 15] = [
             (128, 128, 128, 255), // Gray
             (192, 192, 192, 255), // Light gray
             (96, 96, 96, 255),    // Dark gray
@@ -586,12 +833,10 @@ fn ensure_complete_palette(palette: &mut Vec<(u8, u8, u8, u8)>) {
         ];
 
         let needed = 16 - palette.len();
-        for i in 0..needed.min(default_colours.len()) {
-            palette.push(default_colours[i]);
-        }
+        palette.extend(default_colours.iter().take(needed));
 
         while palette.len() < 16 {
-            let val = ((palette.len() as u8) * 16).min(255);
+            let val = (palette.len() as u8) * 16;
             palette.push((val, val, val, 255));
         }
     }
@@ -605,75 +850,63 @@ fn ensure_complete_palette(palette: &mut Vec<(u8, u8, u8, u8)>) {
 fn read_effect_palette_data(
     cursor: &mut Cursor<&[u8]>,
     ptr_palette_data_block: u64,
-    ptr_palette_info: u64,
+    end_ptr: u64,
     is_256_colour: usize,
-) -> Result<Vec<Vec<(u8, u8, u8, u8)>>, WanError> {
+) -> Result<PaletteList, WanError> {
     cursor
         .seek(SeekFrom::Start(ptr_palette_data_block))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
-    let total_bytes = ptr_palette_info - ptr_palette_data_block;
+    let total_bytes = end_ptr - ptr_palette_data_block;
     let mut custom_palette = Vec::new();
 
-    if is_256_colour == 4 {
-        // Special case seen in effect267
-        let colours_per_row_num = 256;
-        let mut palette = vec![(0, 0, 0, 0); colours_per_row_num];
+    if is_256_colour == 1 || is_256_colour == 4 {
+        // 256-colour (8bpp) mode
+        let num_palettes = (total_bytes as usize / (16 * 4)).max(1);
+        for _ in 0..num_palettes {
+            let mut palette_row = vec![(0, 0, 0, 0); 256];
 
-        let total_colours = total_bytes / 4;
-        for jj in 0..total_colours as usize {
-            let red = read_u8(cursor).map_err(|e| WanError::Io(e))? / 8 * 8 * 32 / 31;
-            let blue = read_u8(cursor).map_err(|e| WanError::Io(e))? / 8 * 8 * 32 / 31;
-            let green = read_u8(cursor).map_err(|e| WanError::Io(e))? / 8 * 8 * 32 / 31;
-            read_u8(cursor).map_err(|e| WanError::Io(e))?; // Skip alpha
+            for j in 0..16 {
+                if cursor.position() + 4 > end_ptr {
+                    break;
+                }
 
-            if 16 + jj < colours_per_row_num {
-                palette[16 + jj] = (red, blue, green, 255);
+                let r_raw = read_u8(cursor)?;
+                let b_raw = read_u8(cursor)?;
+                let g_raw = read_u8(cursor)?;
+                let _padding = read_u8(cursor)?;
+
+                let r = (((r_raw as u32 / 8 * 8) * 32) / 31).min(255) as u8;
+                let g = (((g_raw as u32 / 8 * 8) * 32) / 31).min(255) as u8;
+                let b = (((b_raw as u32 / 8 * 8) * 32) / 31).min(255) as u8;
+
+                palette_row[16 + j] = (r, b, g, 255);
             }
-        }
-        custom_palette.push(palette);
-    } else if is_256_colour == 1 {
-        // 8bpp = 2^8 colours
-        let colour_per_row_num = 256;
-        let reads_per_row_num = 16;
-        let total_colours = (total_bytes / 4) as usize;
-        let total_palettes = total_colours / reads_per_row_num;
-
-        for _ in 0..total_palettes {
-            let mut palette = vec![(0, 0, 0, 0); colour_per_row_num];
-            for jj in 0..reads_per_row_num {
-                let red = read_u8(cursor).map_err(|e| WanError::Io(e))? / 8 * 8 * 32 / 31;
-                let blue = read_u8(cursor).map_err(|e| WanError::Io(e))? / 8 * 8 * 32 / 31;
-                let green = read_u8(cursor).map_err(|e| WanError::Io(e))? / 8 * 8 * 32 / 31;
-                read_u8(cursor).map_err(|e| WanError::Io(e))?; // Skip alpha
-
-                palette[16 + jj] = (red, blue, green, 255);
-            }
-            custom_palette.push(palette);
+            custom_palette.push(palette_row);
         }
     } else {
-        // 4bpp = 2^4 colours
-        let colours_per_row_num = 16;
-        let total_colours = (total_bytes / 4) as usize;
-        let total_palettes = total_colours / colours_per_row_num;
+        // 16-colour (4bpp) mode
+        let colours_per_row = 16;
+        let bytes_per_row = colours_per_row * 4;
+        let num_rows = (total_bytes as usize) / bytes_per_row;
+        for _ in 0..num_rows {
+            let mut palette_row = Vec::with_capacity(colours_per_row);
+            for colour_idx in 0..colours_per_row {
+                if cursor.position() + 4 > end_ptr {
+                    break;
+                }
+                let r = read_u8(cursor)?;
+                let b = read_u8(cursor)?; // Reads B then G
+                let g = read_u8(cursor)?;
+                let _padding = read_u8(cursor)?;
 
-        for _ in 0..total_palettes {
-            let mut palette = Vec::with_capacity(colours_per_row_num);
-            for _ in 0..colours_per_row_num {
-                let red = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-                let blue = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-                let green = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-                read_u8(cursor).map_err(|e| WanError::Io(e))?; // Skip alpha
-
-                palette.push((red, blue, green, 255));
+                let alpha = if colour_idx == 0 { 0 } else { 255 };
+                palette_row.push((r, b, g, alpha));
             }
-            custom_palette.push(palette);
+            if palette_row.len() == colours_per_row {
+                custom_palette.push(palette_row);
+            }
         }
-    }
-
-    // Return at least one palette even if empty
-    if custom_palette.is_empty() {
-        custom_palette.push(vec![(0, 0, 0, 255); 16]);
     }
 
     Ok(custom_palette)
@@ -693,26 +926,18 @@ fn read_image_data(
                 "  - Warning: Failed to seek to image data for image #{}: {}",
                 img_idx, e
             );
-            img_data.push(ImgPiece {
-                img_px: Vec::new(),
-                z_sort: 0,
-            });
+            img_data.push(ImgPiece { img_px: Vec::new() });
             continue;
         }
 
-        let mut img_piece = ImgPiece {
-            img_px: Vec::new(),
-            z_sort: 0,
-        };
+        let mut tile_pixels = Vec::new();
         let mut valid_data = false;
 
-        // Read image data sections
         loop {
-            // Read header values
             let ptr_pix_src = match read_u32_le(cursor) {
                 Ok(val) => val,
                 Err(e) => {
-                    if img_piece.img_px.is_empty() {
+                    if tile_pixels.is_empty() {
                         println!(
                             "  - Warning: Failed to read pixel source pointer for image #{}: {}",
                             img_idx, e
@@ -733,12 +958,10 @@ fn read_image_data(
                 }
             };
 
-            // End of sections marker
             if ptr_pix_src == 0 && num_pixels_to_read == 0 {
                 break;
             }
 
-            // Skip Unk#14
             if let Err(e) = read_u16_le(cursor) {
                 println!(
                     "  - Warning: Failed to read unknown field for image #{}: {}",
@@ -747,360 +970,133 @@ fn read_image_data(
                 break;
             }
 
-            img_piece.z_sort = match read_u32_le(cursor) {
-                Ok(val) => val,
-                Err(e) => {
-                    println!(
-                        "  - Warning: Failed to read z-sort value for image #{}: {}",
-                        img_idx, e
-                    );
-                    0
-                }
+            if let Err(e) = read_u32_le(cursor) {
+                println!(
+                    "  - Warning: Failed to read z-sort value for image #{}: {}",
+                    img_idx, e
+                );
             };
 
-            // Handle pixels
-            let mut px_strip = Vec::with_capacity(num_pixels_to_read as usize);
-            let mut pixels_read_in_strip = 0;
-
             if ptr_pix_src == 0 {
-                // Zero padding case - only when pixel source is zero
-                for _ in 0..num_pixels_to_read {
-                    px_strip.push(0);
-                    pixels_read_in_strip += 1;
-                }
+                tile_pixels.extend(vec![0; num_pixels_to_read as usize]);
                 valid_data = true;
             } else {
                 let current_pos = cursor.position();
 
-                // Use pixel source pointer directly
-                if let Err(_) = cursor.seek(SeekFrom::Start(ptr_pix_src as u64)) {
+                if cursor.seek(SeekFrom::Start(ptr_pix_src as u64)).is_err() {
                     if let Err(seek_e) = cursor.seek(SeekFrom::Start(current_pos)) {
                         println!("  - Warning: Failed to restore position: {}", seek_e);
                     }
                     continue;
                 }
-                
-                for _ in 0..num_pixels_to_read {
-                    match read_u8(cursor) {
-                        Ok(px) => {
-                            px_strip.push(px);
-                            pixels_read_in_strip += 1;
-                            valid_data = true;
-                        }
-                        Err(e) => {
-                            println!(
-                                "  - Warning: Partial read for image #{} at position {}: {} (collected {} of {} pixels)",
-                                img_idx, 
-                                cursor.position(), 
-                                e,
-                                pixels_read_in_strip,
-                                num_pixels_to_read
-                            );
-                            break;
-                        }
+
+                let mut buffer = vec![0; num_pixels_to_read as usize];
+                match cursor.read_exact(&mut buffer) {
+                    Ok(_) => {
+                        tile_pixels.extend(buffer);
+                        valid_data = true;
+                    }
+                    Err(e) => {
+                        println!(
+                            "  - Warning: Partial read for image #{} at position {}: {}",
+                            img_idx,
+                            cursor.position(),
+                            e,
+                        );
+                        break;
                     }
                 }
 
-                // Return to section position
                 if let Err(e) = cursor.seek(SeekFrom::Start(current_pos)) {
                     println!("  - Warning: Failed to restore position after reading pixels for image #{}: {}", 
-                             img_idx, e);
+                        img_idx, e);
                     break;
                 }
             }
-
-            if !px_strip.is_empty() {
-                img_piece.img_px.push(px_strip);
-            }
         }
 
-        if valid_data && !img_piece.img_px.is_empty() {
-            img_data.push(img_piece);
+        if valid_data && !tile_pixels.is_empty() {
+            img_data.push(ImgPiece {
+                img_px: tile_pixels,
+            });
         } else {
             println!(
                 "  - No valid pixel data for image #{}, adding empty placeholder",
                 img_idx
             );
-            img_data.push(ImgPiece {
-                img_px: Vec::new(),
-                z_sort: 0,
-            });
+            img_data.push(ImgPiece { img_px: Vec::new() });
         }
     }
     Ok(img_data)
 }
 
-/// Read image data for Effect WAN with imgType 3
-fn read_effect_imgtype3_data(
-    cursor: &mut Cursor<&[u8]>,
-    ptr_imgs: &[u32],
-    _buffer_size: u64,
-    is_256_colour: usize,
-) -> Result<Vec<ImgPiece>, WanError> {
-    let mut img_data = Vec::new();
-
-    cursor
-        .seek(SeekFrom::Start(ptr_imgs[0] as u64))
-        .map_err(|e| WanError::Io(e))?;
-
-    let mut img_piece = ImgPiece {
-        img_px: Vec::new(),
-        z_sort: 0,
-    };
-
-    let ptr_pix_src = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-    let _atlas_width = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-    let _atlas_height = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-    img_piece.z_sort = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-
-    cursor
-        .seek(SeekFrom::Start(ptr_pix_src as u64))
-        .map_err(|e| WanError::Io(e))?;
-
-    let mut px_strip = Vec::new();
-    while cursor.position() < ptr_imgs[0] as u64 {
-        let px = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-
-        if is_256_colour == 0 {
-            // 4bpp mode - split each byte into two 4-bit values
-            px_strip.push(px % 16); // Lower 4 bits
-            px_strip.push(px / 16); // Upper 4 bits
-        } else {
-            // 8bpp mode - one byte per pixel
-            px_strip.push(px);
-        }
-    }
-
-    img_piece.img_px.push(px_strip);
-    img_data.push(img_piece);
-
-    Ok(img_data)
-}
-
-/// Read meta frames from the WAN file
 fn read_meta_frames(
     cursor: &mut Cursor<&[u8]>,
     ptr_meta_frames_ref_table: u64,
     ptr_frames_ref_table_end: u64,
 ) -> Result<Vec<MetaFrame>, WanError> {
-    cursor
-        .seek(SeekFrom::Start(ptr_meta_frames_ref_table))
-        .map_err(|e| WanError::Io(e))?;
-
-    // Read pointers to meta frames
-    let mut ptr_meta_frames = Vec::new();
+    cursor.seek(SeekFrom::Start(ptr_meta_frames_ref_table))?;
+    let mut ptrs = Vec::new();
     while cursor.position() < ptr_frames_ref_table_end {
-        let ptr = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-        ptr_meta_frames.push(ptr);
+        if let Ok(ptr) = read_u32_le(cursor) {
+            if ptr != 0 {
+                ptrs.push(ptr);
+            }
+        } else {
+            break;
+        }
     }
 
-    let mut meta_frames = Vec::with_capacity(ptr_meta_frames.len());
-    let _buffer_size = cursor.get_ref().len() as u64;
-
-    for (_, &ptr_meta_frame) in ptr_meta_frames.iter().enumerate() {
-        match cursor.seek(SeekFrom::Start(ptr_meta_frame as u64)) {
-            Ok(_) => {},
-            Err(e) => {
-                println!("  ERROR: Failed to seek to frame position 0x{:x}: {}", ptr_meta_frame, e);
-                return Err(WanError::Io(e));
-            }
+    let mut meta_frames = Vec::with_capacity(ptrs.len());
+    for &ptr in &ptrs {
+        if (ptr as u64) >= cursor.get_ref().len() as u64 {
+            continue;
         }
-
-        let mut meta_frame_pieces = Vec::new();
-
+        cursor.seek(SeekFrom::Start(ptr as u64))?;
+        let mut pieces = Vec::new();
         loop {
-            let current_piece_start_pos = cursor.position();
-            
-            // Read img_index with error handling
-            let img_index = match read_i16_le(cursor) {
-                Ok(val) => { 
-                    val 
-                },
-                Err(e) => { 
-                    println!("    ERROR Reading img_index at position 0x{:x}: {}", 
-                             current_piece_start_pos, e); 
-                    return Err(WanError::Io(e));
-                }
-            };
-            
-            // Read other attributes with error handling
-            let _unk0 = match read_u16_le(cursor) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("    ERROR Reading unk0 at position 0x{:x}: {}", 
-                             cursor.position(), e);
-                    return Err(WanError::Io(e));
-                }
-            };
-            
-            let attr0 = match read_u16_le(cursor) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("    ERROR Reading attr0 at position 0x{:x}: {}", 
-                             cursor.position(), e);
-                    return Err(WanError::Io(e));
-                }
-            };
-            
-            let attr1 = match read_u16_le(cursor) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("    ERROR Reading attr1 at position 0x{:x}: {}", 
-                             cursor.position(), e);
-                    return Err(WanError::Io(e));
-                }
-            };
-            
-            let attr2 = match read_u16_le(cursor) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("    ERROR Reading attr2 at position 0x{:x}: {}", 
-                             cursor.position(), e);
-                    return Err(WanError::Io(e));
-                }
-            };
+            if cursor.position() + 10 > cursor.get_ref().len() as u64 {
+                break;
+            }
+            let img_index = read_i16_le(cursor)?;
+            let _unk0 = read_u16_le(cursor)?;
+            let attr0 = read_u16_le(cursor)?;
+            let attr1 = read_u16_le(cursor)?;
+            let attr2 = read_u16_le(cursor)?;
 
-            let is_last = (attr1 & super::flags::ATTR1_IS_LAST_MASK) != 0;
-            
-            meta_frame_pieces.push(MetaFramePiece::new(img_index, attr0, attr1, attr2));
+            // Y is an 8-bit signed value
+            let y_offset = (attr0 & 0xFF) as u8 as i8 as i16;
 
-            if is_last {
+            // X is a 9-bit unsigned value that needs to be centred
+            let x_raw = (attr1 & 0x1FF) as i16;
+            let x_offset = x_raw - 256;
+
+            let shape = (attr0 >> 14) & 0x3;
+            let size = (attr1 >> 14) & 0x3;
+            let resolution_idx = ((shape << 2) | size) as usize;
+
+            let h_flip = (attr1 & super::flags::ATTR1_HFLIP_MASK) != 0;
+            let v_flip = (attr1 & super::flags::ATTR1_VFLIP_MASK) != 0;
+            let is_256_colour = (attr0 & super::flags::ATTR0_COL_PAL_MASK) != 0;
+            let palette_index = ((attr2 & super::flags::ATTR2_PAL_NUMBER_MASK) >> 12) as u8;
+
+            pieces.push(MetaFramePiece::new(MetaFramePieceArgs {
+                tile_num: img_index as u16,
+                palette_index,
+                h_flip,
+                v_flip,
+                x_offset,
+                y_offset,
+                resolution_idx,
+                is_256_colour,
+            }));
+
+            if (attr1 & super::flags::ATTR1_IS_LAST_MASK) != 0 {
                 break;
             }
         }
-
-        meta_frames.push(MetaFrame {
-            pieces: meta_frame_pieces,
-        });
+        meta_frames.push(MetaFrame { pieces });
     }
-
-    Ok(meta_frames)
-}
-
-/// Read effect meta frames
-fn read_effect_meta_frames(
-    cursor: &mut Cursor<&[u8]>,
-    ptr_meta_frames_ref_table: u64,
-    ptr_anim_seq_table: u64,
-) -> Result<Vec<MetaFrame>, WanError> {
-    cursor
-        .seek(SeekFrom::Start(ptr_meta_frames_ref_table))
-        .map_err(|e| WanError::Io(e))?;
-
-    // Read pointers to meta frames
-    let mut ptr_meta_frames = Vec::new();
-    while cursor.position() < ptr_anim_seq_table {
-        let ptr = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-        ptr_meta_frames.push(ptr);
-    }
-
-    // Read meta frames
-    let mut meta_frames = Vec::with_capacity(ptr_meta_frames.len());
-    let _buffer_size = cursor.get_ref().len() as u64;
-
-    for (_, &ptr_meta_frame) in ptr_meta_frames.iter().enumerate() {
-        cursor
-            .seek(SeekFrom::Start(ptr_meta_frame as u64))
-            .map_err(|e| WanError::Io(e))?;
-
-        let mut meta_frame_pieces = Vec::new();
-
-        loop {
-            // Read first 2 bytes - should be FFFF
-            let magic = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-            if magic != 0xFFFF {
-                // Not a valid metaframe, or we've reached the end
-                break;
-            }
-
-            // Read section 1 - should be 0000
-            let _section1 = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
-
-            // Read section 2 - 00 or FB (draw behind character)
-            let _draw_behind = read_u8(cursor).map_err(|e| WanError::Io(e))? == 0xFB;
-
-            // Read section 3 - Y offset
-            let y_offset_lower = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-
-            // Read section 4 - Flags including upper bits of Y offset
-            let section4 = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-            // Cast to u16 before shifting to avoid overflow
-            let y_offset_upper = ((section4 & 0x03) as u16) << 8;
-            let y_offset = y_offset_lower as u16 | y_offset_upper;
-
-            // Read section 5 - X offset
-            let x_offset_lower = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-
-            // Read section 6 - Flags including size, flips, and upper bits of X offset
-            let section6 = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-            let size_bits = section6 & 0x03;
-            let flip_vertical = (section6 & 0x04) != 0;
-            let flip_horizontal = (section6 & 0x08) != 0;
-            let is_last = (section6 & 0x10) != 0;
-            // Cast to u16 before shifting to avoid overflow
-            let x_offset_upper = ((section6 & 0x80) as u16) << 1;
-            let x_offset = x_offset_lower as u16 | x_offset_upper;
-
-            // Read section 7 - Image offset
-            let image_offset = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-
-            // Read section 8 - Palette index
-            let palette_index = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-
-            // Read section 9 - Should be 0x0C
-            let _section9 = read_u8(cursor).map_err(|e| WanError::Io(e))?;
-
-            // Convert the effect metaframe to a format compatible with our MetaFramePiece struct
-            // We need to create attr0, attr1, attr2 values that represent the same information
-
-            // Set attributes based on effect metaframe data
-            let attr0 = y_offset & 0x03FF; // Y offset in lower 10 bits
-
-            let mut attr1 = x_offset & 0x01FF; // X offset in lower 9 bits
-            if flip_horizontal {
-                attr1 |= super::flags::ATTR1_HFLIP_MASK;
-            }
-            if flip_vertical {
-                attr1 |= super::flags::ATTR1_VFLIP_MASK;
-            }
-            if is_last {
-                attr1 |= super::flags::ATTR1_IS_LAST_MASK;
-            }
-
-            // Convert size to resolution type (0-11)
-            // Size bits: 00=8x8, 01=16x16, 10=32x32, 11=64x64
-            let res_type = match size_bits {
-                0 => 0, // 8x8
-                1 => 1, // 16x16
-                2 => 2, // 32x32
-                3 => 3, // 64x64
-                _ => 0,
-            };
-
-            // Set resolution in attr0 and attr1
-            attr1 |= ((res_type & 0x03) << 14) as u16;
-
-            let attr2 = ((palette_index as u16) << 12) | (image_offset as u16);
-
-            meta_frame_pieces.push(MetaFramePiece::new(
-                image_offset as i16,
-                attr0,
-                attr1,
-                attr2,
-            ));
-
-            if is_last {
-                break;
-            }
-        }
-
-        if !meta_frame_pieces.is_empty() {
-            meta_frames.push(MetaFrame {
-                pieces: meta_frame_pieces,
-            });
-        }
-    }
-
     Ok(meta_frames)
 }
 
@@ -1112,22 +1108,22 @@ fn read_offset_data(
 ) -> Result<Vec<FrameOffset>, WanError> {
     cursor
         .seek(SeekFrom::Start(ptr_offsets_table))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
     let mut offset_data = Vec::with_capacity(num_frames);
 
     for _ in 0..num_frames {
-        let head_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
-        let head_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let head_x = read_i16_le(cursor).map_err(WanError::Io)?;
+        let head_y = read_i16_le(cursor).map_err(WanError::Io)?;
 
-        let lhand_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
-        let lhand_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let lhand_x = read_i16_le(cursor).map_err(WanError::Io)?;
+        let lhand_y = read_i16_le(cursor).map_err(WanError::Io)?;
 
-        let rhand_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
-        let rhand_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let rhand_x = read_i16_le(cursor).map_err(WanError::Io)?;
+        let rhand_y = read_i16_le(cursor).map_err(WanError::Io)?;
 
-        let centre_x = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
-        let centre_y = read_i16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let centre_x = read_i16_le(cursor).map_err(WanError::Io)?;
+        let centre_y = read_i16_le(cursor).map_err(WanError::Io)?;
 
         offset_data.push(FrameOffset::new(
             (head_x, head_y),
@@ -1148,173 +1144,57 @@ fn read_animation_groups(
 ) -> Result<(Vec<Vec<u32>>, Vec<u32>), WanError> {
     cursor
         .seek(SeekFrom::Start(ptr_anim_group_table))
-        .map_err(|e| WanError::Io(e))?;
+        .map_err(WanError::Io)?;
 
     let mut anim_groups: Vec<Vec<u32>> = Vec::with_capacity(num_anim_groups);
     let mut anim_sequences: Vec<u32> = Vec::new();
     let buffer_size = cursor.get_ref().len() as u64;
 
     for _group_idx in 0..num_anim_groups {
-        let anim_loc = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-        let anim_length = read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+        let anim_loc = read_u32_le(cursor).map_err(WanError::Io)?;
+        let anim_length = read_u16_le(cursor).map_err(WanError::Io)?;
 
-        // Skip Unk#16
-        read_u16_le(cursor).map_err(|e| WanError::Io(e))?;
+        // Skip unknown value
+        read_u16_le(cursor).map_err(WanError::Io)?;
 
         let current_pos = cursor.position();
 
-        // Skip empty groups
-        if anim_loc == 0 || anim_length == 0 || anim_loc as u64 >= buffer_size {
+        // Skip empty groups or validate pointer bounds
+        if anim_loc == 0
+            || anim_length == 0
+            || (anim_loc as u64) >= buffer_size
+            || (anim_loc as u64) + ((anim_length as u64) * 4) > buffer_size
+        {
             anim_groups.push(Vec::new());
             continue;
         }
 
-        cursor
-            .seek(SeekFrom::Start(anim_loc as u64))
-            .map_err(|e| WanError::Io(e))?;
+        if cursor.seek(SeekFrom::Start(anim_loc as u64)).is_err() {
+            anim_groups.push(Vec::new());
+            // Restore position and continue with next group
+            cursor.seek(SeekFrom::Start(current_pos))?;
+            continue;
+        }
 
         let mut anim_ptrs = Vec::with_capacity(anim_length as usize);
-
-        // Read all animation pointers in this group
         for _dir_idx in 0..anim_length {
-            let anim_ptr = read_u32_le(cursor).map_err(|e| WanError::Io(e))?;
-            anim_ptrs.push(anim_ptr);
-            anim_sequences.push(anim_ptr);
+            // On read error, assume invalid pointer
+            let anim_ptr = read_u32_le(cursor).unwrap_or_default();
+
+            // Only store valid pointers
+            if anim_ptr > 0 && (anim_ptr as u64) < buffer_size {
+                anim_ptrs.push(anim_ptr);
+                anim_sequences.push(anim_ptr);
+            } else {
+                anim_ptrs.push(0);
+            }
         }
 
         anim_groups.push(anim_ptrs);
 
-        // Restore position
-        cursor
-            .seek(SeekFrom::Start(current_pos))
-            .map_err(|e| WanError::Io(e))?;
+        // Restore position for next group header
+        cursor.seek(SeekFrom::Start(current_pos))?;
     }
 
     Ok((anim_groups, anim_sequences))
-}
-
-/// Read animation sequences from the WAN file
-fn read_animation_sequences(
-    cursor: &mut Cursor<&[u8]>,
-    animation_groups: &[Vec<u32>],
-    _anim_sequences: &[u32],
-) -> Result<Vec<Vec<Animation>>, WanError> {
-    let _buffer_size = cursor.get_ref().len() as u64;
-    let mut result_animation_groups: Vec<Vec<Animation>> = 
-        Vec::with_capacity(animation_groups.len());
-
-    for (_group_idx, group) in animation_groups.iter().enumerate() {
-        // Skip empty groups but preserve structure with empty Vec
-        if group.is_empty() {
-            result_animation_groups.push(Vec::new());
-            continue;
-        }
-
-        let mut result_group: Vec<Animation> = Vec::with_capacity(group.len());
-
-        // Process each animation pointer in this group
-        for (dir_idx, &ptr) in group.iter().enumerate() {
-            if dir_idx > 0 && ptr == group[dir_idx - 1] {
-                if !result_group.is_empty() {
-                    result_group.push(result_group[dir_idx - 1].clone());
-                    continue;
-                }
-            }
-
-            if let Err(e) = cursor.seek(SeekFrom::Start(ptr as u64)) {
-                println!(
-                    "    Error seeking to animation sequence at {:#x}: {}",
-                    ptr, e
-                );
-                // Add an empty animation as a placeholder
-                result_group.push(Animation::empty());
-                continue;
-            }
-
-            let mut sequence_frames = Vec::new();
-
-            loop {
-                let frame_dur = match read_u8(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading frame duration: {}", e);
-                        break;
-                    }
-                };
-
-                // End of sequence marker
-                if frame_dur == 0 {
-                    // Skip remaining bytes of the end marker
-                    let mut skip_buf = [0u8; 11];
-                    if let Err(e) = cursor.read_exact(&mut skip_buf) {
-                        println!("    Warning: Error skipping end marker: {}", e);
-                    }
-                    break;
-                }
-
-                // Read rest of frame data
-                let flag = match read_u8(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading frame flag: {}", e);
-                        break;
-                    }
-                };
-
-                let frame_index = match read_u16_le(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading frame index: {}", e);
-                        break;
-                    }
-                };
-
-                let spr_off_x = match read_i16_le(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading sprite offset X: {}", e);
-                        break;
-                    }
-                };
-
-                let spr_off_y = match read_i16_le(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading sprite offset Y: {}", e);
-                        break;
-                    }
-                };
-
-                let sdw_off_x = match read_i16_le(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading shadow offset X: {}", e);
-                        break;
-                    }
-                };
-
-                let sdw_off_y = match read_i16_le(cursor) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        println!("    Error reading shadow offset Y: {}", e);
-                        break;
-                    }
-                };
-
-                sequence_frames.push(SequenceFrame::new(
-                    frame_index,
-                    frame_dur,
-                    flag,
-                    (spr_off_x, spr_off_y),
-                    (sdw_off_x, sdw_off_y),
-                ));
-            }
-
-            result_group.push(Animation::new(sequence_frames));
-        }
-
-        result_animation_groups.push(result_group.clone());
-    }
-
-    Ok(result_animation_groups)
 }

@@ -3,8 +3,6 @@
 //! This module provides functionality for creating sprite atlases from frame collections,
 //! optimising memory usage and rendering performance
 
-use crate::graphics::wan::{WanError, WanFile};
-
 use std::{
     collections::HashMap,
     fs, io,
@@ -15,18 +13,19 @@ use image::{ImageError, RgbaImage};
 use oxipng::{self};
 use serde_json;
 
+use crate::graphics::wan::{WanError, WanFile};
+
 pub mod analyser;
 pub mod generator;
 pub mod metadata;
 
-/// Configuration options for atlas
+/// Configuration options for atlas image
 #[derive(Debug, Clone)]
 pub struct AtlasConfig {
     pub offset_padding: u8,
     pub min_frame_width: u32,
     pub min_frame_height: u32,
     pub deduplicate_frames: bool,
-    pub optimise_compression: bool,
     pub debug: bool,
     pub use_indexed_colour: bool,
     pub use_4bit_depth: bool,
@@ -39,7 +38,6 @@ impl Default for AtlasConfig {
             min_frame_width: 32,
             min_frame_height: 32,
             deduplicate_frames: true,
-            optimise_compression: true,
             debug: false,
             use_indexed_colour: true,
             use_4bit_depth: true,
@@ -50,13 +48,12 @@ impl Default for AtlasConfig {
 /// The final result of the atlas generation process
 #[derive(Debug)]
 pub struct AtlasResult {
-    pub dimensions: (u32, u32),
-    pub frame_dimensions: (u32, u32),
+    pub _dimensions: (u32, u32),
+    pub _frame_dimensions: (u32, u32),
     pub image_path: PathBuf,
-    pub metadata_path: PathBuf,
+    pub _metadata_path: PathBuf,
 }
 
-/// Error types specific to atlas operations
 #[derive(Debug)]
 pub enum AtlasError {
     Io(io::Error),
@@ -103,7 +100,7 @@ impl std::fmt::Display for AtlasError {
     }
 }
 
-/// Creates a sprite atlas and associated metadata for a single Pokémon.
+/// Creates a sprite atlas and associated metadata for a Pokemon
 ///
 /// This function orchestrates the analysis, layout, generation, and metadata creation
 /// based on the provided WAN files and configuration.
@@ -113,24 +110,28 @@ pub fn create_pokemon_atlas(
     dex_num: u16,
     config: &AtlasConfig,
     output_dir: &Path,
+    folder_name: &str,
 ) -> Result<AtlasResult, AtlasError> {
+    // --- DIAGNOSTIC START ---
+    let problem_ids: std::collections::HashSet<u16> = [
+        162, 195, 208, 215, 217, 226, 229, 230, 26, 50, 51, 487, 486, 419, 386, 352, 480, 483,
+    ]
+    .iter()
+    .cloned()
+    .collect();
+    let is_problematic = problem_ids.contains(&dex_num);
+    // --- DIAGNOSTIC END ---
+
     if wan_files.is_empty() {
         return Err(AtlasError::NoWanFilesProvided);
     }
 
-    let pokemon_name = if pokemon_id as u16 == dex_num {
-        format!("pokemon_{:03}", dex_num)
-    } else {
-        let pokemon_form_num = pokemon_id as u16 - dex_num;
-        format!("pokemon_{:03}_{:02}", dex_num, pokemon_form_num)
-    };
-
-    let pokemon_dir = output_dir.join(&pokemon_name);
+    let pokemon_dir = output_dir.join(folder_name);
     fs::create_dir_all(&pokemon_dir)?;
 
     // Analyse Frames
     println!(
-        "Analysing frames for Pokémon #{:03} (Dex #{:03})...",
+        "Analysing frames for Pokemon #{:03} (Dex #{:03})...",
         pokemon_id, dex_num
     );
     let mut frame_analysis = analyser::analyse_frames(wan_files, dex_num)?;
@@ -154,9 +155,7 @@ pub fn create_pokemon_atlas(
         generator::prepare_frames(&mut frame_analysis, frame_width, frame_height)?;
     println!("  Prepared {} frames for atlas.", prepared_frames.len());
 
-    // Deduplicate Frames
     let (unique_frames, frame_mapping) = if config.deduplicate_frames {
-        println!("  Deduplicating frames...");
         let (unique, mapping) = generator::deduplicate_frames(&prepared_frames);
         println!(
             "  Deduplication result: {} unique frames (reduced from {}).",
@@ -171,8 +170,47 @@ pub fn create_pokemon_atlas(
         )
     };
 
+    // --- CRITICAL DIAGNOSTIC BLOCK ---
+    if is_problematic {
+        println!(
+            "[DIAGNOSTIC] === Atlas Layout Inputs for Dex #{} ===",
+            dex_num
+        );
+        println!(
+            "  1. Total original frames analyzed: {}",
+            frame_analysis.total_original_frames
+        );
+        println!(
+            "  2. Max content size from analysis: {}x{}",
+            frame_analysis.max_content_size.0, frame_analysis.max_content_size.1
+        );
+        println!(
+            "  3. Calculated optimal frame size (padded & rounded): {}x{}",
+            frame_width, frame_height
+        );
+        println!(
+            "  4. Total unique frames after deduplication: {}",
+            unique_frames.len()
+        );
+    }
+    // --- END CRITICAL DIAGNOSTIC BLOCK ---
+
     let atlas_layout =
         generator::create_atlas_layout(unique_frames.len(), frame_width, frame_height);
+
+    // --- CRITICAL DIAGNOSTIC BLOCK 2 ---
+    if is_problematic {
+        println!("[DIAGNOSTIC] === Atlas Layout Results ===");
+        println!("  - Frames per row: {}", atlas_layout.frames_per_row);
+        println!("  - Rows: {}", atlas_layout.rows);
+        println!(
+            "  - Final Atlas Dimensions: {}x{}",
+            atlas_layout.dimensions.0, atlas_layout.dimensions.1
+        );
+        println!("[DIAGNOSTIC] =======================================");
+    }
+    // --- END CRITICAL DIAGNOSTIC BLOCK 2 ---
+
     println!(
         "  Atlas layout created: {}x{} grid, {}x{} total pixels.",
         atlas_layout.frames_per_row,
@@ -188,7 +226,7 @@ pub fn create_pokemon_atlas(
     let shadow_size = get_shadow_size(wan_files);
     let metadata = metadata::generate_metadata(
         wan_files,
-        &frame_analysis, // Pass the analysis result containing all needed info
+        &frame_analysis,
         frame_width,
         frame_height,
         &atlas_layout,
@@ -204,7 +242,6 @@ pub fn create_pokemon_atlas(
 
     println!("  Saving atlas image to {}...", atlas_path.display());
 
-    // Try indexed colour else use RGBA
     if config.use_indexed_colour {
         if let Err(e) = save_indexed_atlas(&atlas_image, &atlas_path, config) {
             println!("  Warning: Failed to save with indexed palette: {}", e);
@@ -233,15 +270,15 @@ pub fn create_pokemon_atlas(
     }
 
     println!(
-        "Successfully generated atlas for Pokémon #{:03}.",
+        "Successfully generated atlas for Pokemon #{:03}.",
         pokemon_id
     );
 
     Ok(AtlasResult {
-        dimensions: atlas_layout.dimensions,
-        frame_dimensions: (frame_width, frame_height),
+        _dimensions: atlas_layout.dimensions,
+        _frame_dimensions: (frame_width, frame_height),
         image_path: atlas_path,
-        metadata_path,
+        _metadata_path: metadata_path,
     })
 }
 
@@ -251,17 +288,12 @@ pub fn save_indexed_atlas(
     path: &Path,
     config: &AtlasConfig,
 ) -> Result<(), AtlasError> {
-    // First save the atlas image at full quality
+    // Save the atlas image at full quality
     let temp_path = path.with_extension("temp.png");
-    atlas_image
-        .save(&temp_path)
-        .map_err(|e| AtlasError::Image(e))?;
+    atlas_image.save(&temp_path).map_err(AtlasError::Image)?;
 
     if config.use_4bit_depth {
-        // Use oxipng to optimise the PNG
-        let preset = if config.optimise_compression { 6 } else { 2 };
-
-        let mut options = oxipng::Options::from_preset(preset);
+        let mut options = oxipng::Options::from_preset(2);
 
         // Enable bit depth reduction for 4-bit output
         options.bit_depth_reduction = true;
@@ -281,14 +313,12 @@ pub fn save_indexed_atlas(
         if let Err(e) = std::fs::remove_file(&temp_path) {
             println!("  Warning: Failed to remove temporary file: {}", e);
         }
-    } else {
-        if let Err(e) = std::fs::rename(&temp_path, path) {
-            println!("  Warning: Failed to rename file: {}", e);
-            if let Err(e) = std::fs::copy(&temp_path, path) {
-                return Err(AtlasError::Io(e));
-            }
-            let _ = std::fs::remove_file(&temp_path);
+    } else if let Err(e) = std::fs::rename(&temp_path, path) {
+        println!("  Warning: Failed to rename file: {}", e);
+        if let Err(e) = std::fs::copy(&temp_path, path) {
+            return Err(AtlasError::Io(e));
         }
+        let _ = std::fs::remove_file(&temp_path);
     }
 
     Ok(())

@@ -3,25 +3,40 @@
 //! This module defines the core data structures used to represent
 //! WAN sprite data
 
-use super::{WanType, CENTRE_X, CENTRE_Y, DIM_TABLE, flags};
+use std::collections::HashMap;
 
+use super::{flags, WanType, DIM_TABLE, TEX_SIZE};
+
+pub type RgbaTuple = (u8, u8, u8, u8);
+pub type Palette = Vec<RgbaTuple>;
+pub type PaletteList = Vec<Palette>;
+pub type TileLookup = HashMap<usize, usize>;
+
+#[derive(Debug, Clone)]
+pub enum AnimationStructure {
+    Character(Vec<Vec<Animation>>), // [animation_type][direction]
+    Effect(Vec<Animation>),         // Flat list
+}
+
+// TODO: Maybe create a effect and character inside this and CharaWan and EffectWan for better
+// separation instead of one structure.
 #[derive(Debug, Clone)]
 pub struct WanFile {
     pub img_data: Vec<ImgPiece>,
     pub frame_data: Vec<MetaFrame>,
-    pub animation_groups: Vec<Vec<Animation>>,
+    pub animations: AnimationStructure,
     pub body_part_offset_data: Vec<FrameOffset>,
-    pub custom_palette: Vec<Vec<(u8, u8, u8, u8)>>,
+    pub custom_palette: PaletteList,
+    pub effect_specific_palette: Option<PaletteList>,
+    pub tile_lookup_8bpp: Option<TileLookup>,
     pub sdw_size: u8,
     pub wan_type: WanType,
+    pub palette_offset: u16,
 }
-
 /// A collection of image data strips
 #[derive(Debug, Clone)]
 pub struct ImgPiece {
-    /// Pixel data organized as strips
-    pub img_px: Vec<Vec<u8>>,
-    pub z_sort: u32,
+    pub img_px: Vec<u8>,
 }
 
 /// A collection of meta frame pieces that form a complete sprite frame
@@ -31,91 +46,61 @@ pub struct MetaFrame {
     pub pieces: Vec<MetaFramePiece>,
 }
 
-/// Individual component of a meta frame
 #[derive(Debug, Clone)]
 pub struct MetaFramePiece {
-    /// Index into img_data (-1 means reference a previous piece)
-    pub img_index: i16,
-    /// Y offset and flags
-    pub attr0: u16,
-    /// X offset and flags
-    pub attr1: u16,
-    /// Palette and tile info
-    pub attr2: u16,
+    pub tile_num: u16,
+    pub palette_index: u8,
+    pub h_flip: bool,
+    pub v_flip: bool,
+    pub x_offset: i16,
+    pub y_offset: i16,
+    pub resolution_idx: usize,
+    pub is_256_colour: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MetaFramePieceArgs {
+    pub tile_num: u16,
+    pub palette_index: u8,
+    pub h_flip: bool,
+    pub v_flip: bool,
+    pub x_offset: i16,
+    pub y_offset: i16,
+    pub resolution_idx: usize,
+    pub is_256_colour: bool,
 }
 
 impl MetaFramePiece {
-    pub fn new(img_index: i16, attr0: u16, attr1: u16, attr2: u16) -> Self {
+    pub fn new(args: MetaFramePieceArgs) -> Self {
         Self {
-            img_index,
-            attr0,
-            attr1,
-            attr2,
+            tile_num: args.tile_num,
+            palette_index: args.palette_index,
+            h_flip: args.h_flip,
+            v_flip: args.v_flip,
+            x_offset: args.x_offset,
+            y_offset: args.y_offset,
+            resolution_idx: args.resolution_idx,
+            is_256_colour: args.is_256_colour,
         }
     }
 
-    /// Check if using 256 colour palette mode
-    pub fn is_colour_pal_256(&self) -> bool {
-        (self.attr0 & flags::ATTR0_COL_PAL_MASK) != 0
-    }
-
-    /// Get Y offset relative to centre
-    pub fn get_y_offset(&self) -> i16 {
-        let raw_y = self.attr0 & flags::ATTR0_Y_OFFSET_MASK;
-        (raw_y as i16) - (CENTRE_Y as i16)
-    }
-
-    pub fn is_v_flip(&self) -> bool {
-        (self.attr1 & flags::ATTR1_VFLIP_MASK) != 0
-    }
-
-    pub fn is_h_flip(&self) -> bool {
-        (self.attr1 & flags::ATTR1_HFLIP_MASK) != 0
-    }
-
-    /// Get X offset relative to centre
-    pub fn get_x_offset(&self) -> i16 {
-        let raw_x = self.attr1 & flags::ATTR1_X_OFFSET_MASK;
-        (raw_x as i16) - (CENTRE_X as i16)
-    }
-
-    /// Get palette number
-    pub fn get_pal_num(&self) -> u8 {
-        ((self.attr2 & flags::ATTR2_PAL_NUMBER_MASK) >> 12) as u8
-    }
-
-    /// Get tile number
-    pub fn get_tile_num(&self) -> u16 {
-        self.attr2 & flags::ATTR2_TILE_NUM_MASK
-    }
-
-    /// Get resolution type index (into DIM_TABLE)
-    pub fn get_resolution_type(&self) -> usize {
-        ((self.attr1 & flags::ATTR01_RES_MASK) >> 14) as usize |
-        ((self.attr0 & flags::ATTR01_RES_MASK) >> 12) as usize
-    }
-
-    /// Get the dimensions of this piece
     pub fn get_dimensions(&self) -> (usize, usize) {
-        let res_type = self.get_resolution_type();
-        if res_type < DIM_TABLE.len() {
-            DIM_TABLE[res_type]
-        } else {
-            // Default to 8x8 if invalid
-            (1, 1)
-        }
+        DIM_TABLE
+            .get(self.resolution_idx)
+            .copied()
+            .unwrap_or((1, 1))
     }
 
-    /// Get the bounds of this piece (x, y, width, height)
     pub fn get_bounds(&self) -> (i16, i16, i16, i16) {
-        let start = (self.get_x_offset(), self.get_y_offset());
-        let (width, height) = self.get_dimensions();
-        
+        let start_x = self.x_offset;
+        let start_y = self.y_offset;
+        let (width_blocks, height_blocks) = self.get_dimensions();
+
         (
-            start.0, 
-            start.1, 
-            start.0 + (width * super::TEX_SIZE) as i16, 
-            start.1 + (height * super::TEX_SIZE) as i16
+            start_x,
+            start_y,
+            start_x + (width_blocks * TEX_SIZE) as i16,
+            start_y + (height_blocks * TEX_SIZE) as i16,
         )
     }
 }
@@ -125,19 +110,15 @@ impl MetaFramePiece {
 pub struct FrameOffset {
     /// Head position (x, y)
     pub head: (i16, i16),
-    
     /// Left hand position (x, y)
     pub lhand: (i16, i16),
-    
     /// Right hand position (x, y)
     pub rhand: (i16, i16),
-    
-    /// Centre position (x, y)
+    // Centre position (x, y)
     pub centre: (i16, i16),
 }
 
 impl FrameOffset {
-    /// Create a new FrameOffset
     pub fn new(head: (i16, i16), lhand: (i16, i16), rhand: (i16, i16), centre: (i16, i16)) -> Self {
         Self {
             head,
@@ -145,23 +126,6 @@ impl FrameOffset {
             rhand,
             centre,
         }
-    }
-
-    /// Get the bounds that encompass all offsets
-    pub fn get_bounds(&self) -> (i16, i16, i16, i16) {
-        let mut min_x = i16::MAX;
-        let mut min_y = i16::MAX;
-        let mut max_x = i16::MIN;
-        let mut max_y = i16::MIN;
-
-        for &(x, y) in &[self.head, self.lhand, self.rhand, self.centre] {
-            min_x = min_x.min(x);
-            min_y = min_y.min(y);
-            max_x = max_x.max(x);
-            max_y = max_y.max(y);
-        }
-
-        (min_x, min_y, max_x + 1, max_y + 1)
     }
 }
 
@@ -181,7 +145,13 @@ pub struct SequenceFrame {
 }
 
 impl SequenceFrame {
-    pub fn new(frame_index: u16, duration: u8, flag: u8, offset: (i16, i16), shadow: (i16, i16)) -> Self {
+    pub fn new(
+        frame_index: u16,
+        duration: u8,
+        flag: u8,
+        offset: (i16, i16),
+        shadow: (i16, i16),
+    ) -> Self {
         Self {
             frame_index,
             duration,
