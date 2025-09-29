@@ -43,7 +43,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
 
     pub fn extract_monster_data(
         &self,
-        pokemon_ids: Option<&[usize]>,
+        pokemon_ids: Option<u32>,
         output_dir: &Path,
     ) -> io::Result<()> {
         // Load all necessary data files
@@ -95,20 +95,17 @@ impl<'a> PokemonSpriteExtractor<'a> {
         // Build the definitive list of entries to process
         let final_list: Vec<(usize, String)>;
 
+        // make it num_pokemon
         if let Some(ids) = pokemon_ids {
-            // This logic is for testing specific IDs and is less critical, but we'll update it for consistency
             let mut list = Vec::new();
-            for &id in ids {
-                if id < monster_md.len() {
-                    // Simplified naming for direct testing.
-                    let entry = &monster_md[id];
-                    let folder_name = if id == 537 {
-                        "pokemon_000".to_string()
-                    } else {
-                        format!("pokemon_{:03}", entry.national_pokedex_number)
-                    };
-                    list.push((id, folder_name));
-                }
+            for id in 0..=ids {
+                let entry = &monster_md[id as usize];
+                let folder_name = if id == 537 {
+                    "pokemon_000".to_string()
+                } else {
+                    format!("pokemon_{:03}", entry.national_pokedex_number)
+                };
+                list.push((id as usize, folder_name));
             }
             final_list = list;
         } else {
