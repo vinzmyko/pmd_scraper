@@ -6,6 +6,7 @@ mod filesystem;
 mod move_effects_index;
 mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
+mod progress;
 mod rom;
 
 mod containers;
@@ -16,6 +17,8 @@ mod graphics;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use clap::Parser;
+
+use crate::progress::write_progress;
 
 use {
     animation_info_extractor::AnimationInfoExtractor, effect_sprite_extractor::EffectAssetPipeline,
@@ -31,6 +34,8 @@ struct Cli {
     rom_path: PathBuf,
     #[arg(short, long, value_name = "OUTPUT_DIR", default_value = "./output")]
     output_dir: PathBuf,
+    #[arg(long)]
+    progress: PathBuf,
     #[arg(long)]
     num_pokemon: Option<u32>,
 }
@@ -69,6 +74,7 @@ fn main() {
 
             let mut animation_info_extractor = AnimationInfoExtractor::new(&mut rom);
             println!("Extracting all animation data...");
+
             let anim_data_info = animation_info_extractor.parse_and_transform_animation_data();
             let _ = animation_info_extractor
                 .save_animation_info_json(&anim_data_info, &output_dir_jsons);
@@ -83,12 +89,44 @@ fn main() {
 
             let moves_map = anim_data_info.transform_move_data();
 
+            // Includes all pokemon, female versions, different forms
+            let mut total_pokemon: usize = 572;
+            const EFFECT_SPRITE_NUM: usize = 539;
+
+            if let Some(num) = cli.num_pokemon {
+                total_pokemon = num as usize;
+            }
+
+            write_progress(&cli.progress, 0, total_pokemon, "pokemon_sprite", "running");
             let sprite_extractor = PokemonSpriteExtractor::new(&rom);
-            let _ = sprite_extractor.extract_monster_data(cli.num_pokemon, &output_dir_sprites);
+            let _ = sprite_extractor.extract_monster_data(
+                cli.num_pokemon,
+                &output_dir_sprites,
+                &cli.progress,
+            );
+
+            write_progress(&cli.progress, 0, 2, "portrait_atlas", "running");
             let portrait_extractor = PortraitExtractor::new(&rom);
-            let _ = portrait_extractor.extract_portrait_atlases(&output_dir_portraits);
+            let _ =
+                portrait_extractor.extract_portrait_atlases(&output_dir_portraits, &cli.progress);
+
+            write_progress(
+                &cli.progress,
+                0,
+                EFFECT_SPRITE_NUM,
+                "move_effect_sprites",
+                "running",
+            );
             let mut effect_pipeline = EffectAssetPipeline::new(&rom);
-            let _ = effect_pipeline.run(&effects_map, &moves_map, &output_dir_pipeline);
+            let _ = effect_pipeline.run(
+                &effects_map,
+                &moves_map,
+                &output_dir_pipeline,
+                &cli.progress,
+                EFFECT_SPRITE_NUM,
+            );
+
+            write_progress(&cli.progress, 0, 0, "", "complete");
         }
         Err(e) => {
             eprintln!("Failed to read ROM file, possibly corrupted: {}", e);

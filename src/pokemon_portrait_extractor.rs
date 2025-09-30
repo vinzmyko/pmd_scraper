@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    graphics::portrait::{create_portrait_atlas, AtlasType, KaoFile},
-    rom::Rom,
+    graphics::portrait::{create_portrait_atlas, AtlasType, KaoFile}, progress::write_progress, rom::Rom
 };
 
 pub struct PortraitExtractor<'a> {
@@ -19,7 +18,7 @@ impl<'a> PortraitExtractor<'a> {
     }
 
     /// Extract portrait atlases from the ROM
-    pub fn extract_portrait_atlases(&self, output_dir: &Path) -> io::Result<()> {
+    pub fn extract_portrait_atlases(&self, output_dir: &Path, progress_path: &Path) -> io::Result<()> {
         // Create directories
         fs::create_dir_all(output_dir)?;
 
@@ -34,7 +33,9 @@ impl<'a> PortraitExtractor<'a> {
 
         // Generate both atlas types
         self.generate_atlas(&kao_file, AtlasType::Pokedex, output_dir)?;
+        write_progress(progress_path, 1, 2, "portrait_atlas", "running");
         self.generate_atlas(&kao_file, AtlasType::Expressions, output_dir)?;
+        write_progress(progress_path, 2, 2, "portrait_atlas", "running");
 
         Ok(())
     }

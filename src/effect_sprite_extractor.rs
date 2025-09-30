@@ -25,6 +25,7 @@ use crate::{
         AnimationDetails, AnimationSequence, EffectDefinition, MoveData, MoveEffectTrigger,
         MoveEffectsIndex, ReuseEffect, ScreenEffect, SpriteEffect,
     },
+    progress::write_progress,
     rom::Rom,
 };
 
@@ -52,6 +53,8 @@ impl<'a> EffectAssetPipeline<'a> {
         effects_map: &HashMap<u16, EffectAnimationInfo>,
         moves_map: &HashMap<usize, MoveAnimationInfo>,
         output_dir: &Path,
+        progress_path: &Path,
+        total_effects: usize,
     ) -> io::Result<()> {
         println!("\n--- Starting Effect Asset Pipeline ---");
 
@@ -82,6 +85,13 @@ impl<'a> EffectAssetPipeline<'a> {
                     match self.process_sprite_effect(*effect_id, effect_info, &sprites_dir) {
                         Ok(Some(entry)) => {
                             effects_processed += 1;
+                            write_progress(
+                                progress_path,
+                                effects_processed,
+                                total_effects,
+                                "move_effect_sprites",
+                                "running",
+                            );
                             Some(entry)
                         }
                         Ok(None) => {
