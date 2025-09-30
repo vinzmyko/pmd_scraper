@@ -19,6 +19,7 @@ use crate::{
         wan::{parser, Animation, AnimationStructure, WanFile},
         WanType,
     },
+    progress::write_progress,
     rom::Rom,
 };
 
@@ -45,6 +46,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
         &self,
         pokemon_ids: Option<u32>,
         output_dir: &Path,
+        progress_path: &Path,
     ) -> io::Result<()> {
         // Load all necessary data files
         let monster_md_id = self
@@ -166,9 +168,16 @@ impl<'a> PokemonSpriteExtractor<'a> {
         };
 
         // Process the clean filtered list
-        for (id, folder_name) in final_list {
-            let entry = &monster_md[id];
-            self.process_pokemon(id, entry, &folder_name, &context)?;
+        for (i, (id, folder_name)) in final_list.iter().enumerate() {
+            let entry = &monster_md[*id];
+            self.process_pokemon(*id, entry, &folder_name, &context)?;
+            write_progress(
+                progress_path,
+                i + 1,
+                final_list.len(),
+                "pokemon_sprite",
+                "running",
+            );
         }
 
         Ok(())
