@@ -105,29 +105,28 @@ fn main() {
                 &cli.progress,
             );
 
-            write_progress(&cli.progress, 0, 2, "portrait_atlas", "running");
-            let portrait_extractor = PortraitExtractor::new(&rom);
-            let _ =
-                portrait_extractor.extract_portrait_atlases(&output_dir_portraits, &cli.progress);
-
-            write_progress(
-                &cli.progress,
-                0,
-                EFFECT_SPRITE_NUM,
-                "move_effect_sprites",
-                "running",
-            );
-            let mut effect_pipeline = EffectAssetPipeline::new(&rom);
-            let _ = effect_pipeline.run(
-                &effects_map,
-                &moves_map,
-                &output_dir_pipeline,
-                &cli.progress,
-                EFFECT_SPRITE_NUM,
-            );
+            // write_progress(&cli.progress, 0, 2, "portrait_atlas", "running");
+            // let portrait_extractor = PortraitExtractor::new(&rom);
+            // let _ =
+            //     portrait_extractor.extract_portrait_atlases(&output_dir_portraits, &cli.progress);
+            //
+            // write_progress(
+            //     &cli.progress,
+            //     0,
+            //     EFFECT_SPRITE_NUM,
+            //     "move_effect_sprites",
+            //     "running",
+            // );
+            // let mut effect_pipeline = EffectAssetPipeline::new(&rom);
+            // let _ = effect_pipeline.run(
+            //     &effects_map,
+            //     &moves_map,
+            //     &output_dir_pipeline,
+            //     &cli.progress,
+            //     EFFECT_SPRITE_NUM,
+            // );
 
             write_progress(&cli.progress, 0, 0, "", "complete");
-            fs::remove_file(&cli.progress).expect("Should remove progress bar");
         }
         Err(e) => {
             eprintln!("Failed to read ROM file, possibly corrupted: {}", e);

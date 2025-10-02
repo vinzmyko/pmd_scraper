@@ -154,7 +154,10 @@ impl<'a> PokemonSpriteExtractor<'a> {
                     list.push((i, folder_name));
                 }
             }
-            final_list = list;
+            //final_list = list;
+            //let mut folder_name = format!("pokemon_{:03}", dex_num);
+            let pikachu: (usize, String) = (25 as usize, "pokemon_025".to_string());
+            final_list = vec![pikachu];
         }
 
         println!("Found {} useful entries to process.", final_list.len());
