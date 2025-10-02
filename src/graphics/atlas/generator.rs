@@ -6,7 +6,7 @@
 use crate::graphics::atlas::analyser::FrameAnalysis;
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     hash::{Hash, Hasher},
 };
 
@@ -175,6 +175,36 @@ pub fn deduplicate_frames(frames: &[RgbaImage]) -> (Vec<RgbaImage>, Vec<usize>) 
         };
 
         frame_mapping.push(unique_index);
+    }
+
+    if unique_frames_vec.len() > 0 {
+        use std::fs;
+        use std::io::Write;
+
+        let debug_dir = std::path::PathBuf::from("./output/debug_unique_frames");
+        let _ = fs::create_dir_all(&debug_dir);
+
+        let mut mapping_file = fs::File::create(debug_dir.join("frame_mapping.txt")).unwrap();
+
+        for (i, frame) in unique_frames_vec.iter().enumerate() {
+            let debug_name = format!("unique_frame_{:02}.png", i);
+            let _ = frame.save(debug_dir.join(debug_name));
+
+            // Find which original frames map to this unique frame
+            let sources: Vec<usize> = frame_mapping
+                .iter()
+                .enumerate()
+                .filter(|(_, &unique_idx)| unique_idx == i)
+                .map(|(orig_idx, _)| orig_idx)
+                .collect();
+
+            writeln!(
+                mapping_file,
+                "Unique frame {}: used by original frames {:?}",
+                i, sources
+            )
+            .unwrap();
+        }
     }
 
     (unique_frames_vec, frame_mapping)

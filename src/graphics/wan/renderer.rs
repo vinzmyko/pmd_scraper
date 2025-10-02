@@ -275,6 +275,15 @@ fn render_piece(
     let is_256_colour_mode = piece.is_256_colour;
     let tile_num = piece.tile_num as usize;
 
+    let adjusted_idx = tile_num.saturating_sub(1) as usize;
+
+    println!(
+        "TILE ACCESS: piece tile_num={}, adjusted_idx={}, img_data_len={}",
+        tile_num,
+        adjusted_idx,
+        wan.img_data.len()
+    );
+
     let pixel_buffer: &[u8] = if is_256_colour_mode {
         // Use the pre-computed lookup
         if let Some(ref lookup) = wan.tile_lookup_8bpp {
@@ -291,7 +300,7 @@ fn render_piece(
         }
     } else {
         // For 4bpp, each tile is its own ImgPiece
-        wan.img_data.get(tile_num).map_or(&[], |p| &p.img_px)
+        wan.img_data.get(adjusted_idx).map_or(&[], |p| &p.img_px)
     };
 
     if pixel_buffer.is_empty() {
