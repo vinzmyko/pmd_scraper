@@ -75,6 +75,8 @@ pub struct FrameInfo {
     pub is_return_frame: bool,
     /// True if this is a key frame in a charge-up/multi-hit sequence.
     pub is_rush_frame: bool,
+    pub h_flip: bool,
+    pub v_flip: bool,
 }
 
 /// Generates the complete AtlasMetadata structure
@@ -154,6 +156,13 @@ pub fn generate_metadata(
         let rhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.rhand));
         let centre_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.centre));
 
+        let (h_flip, v_flip) = wan_file
+            .frame_data
+            .get(analysed_frame.original_wan_frame_index)
+            .and_then(|frame| frame.pieces.first())
+            .map(|piece| (piece.h_flip, piece.v_flip))
+            .unwrap_or((false, false));
+
         let frame_info = FrameInfo {
             idx: unique_atlas_index_u32,
             sheet_x,
@@ -170,6 +179,8 @@ pub fn generate_metadata(
             lhand_pos: lhand_pos_rel,
             rhand_pos: rhand_pos_rel,
             centre_pos: centre_pos_rel,
+            h_flip,
+            v_flip,
         };
 
         let anim_output_info = output_animations
