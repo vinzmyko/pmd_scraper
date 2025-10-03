@@ -525,44 +525,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
             }
         }
 
-        // Log final stats
-        let non_empty_count = merged_groups
-            .iter()
-            .filter(|group| !group.is_empty())
-            .count();
-
-        let total_animations: usize = merged_groups.iter().map(|group| group.len()).sum();
-
-        println!(
-            "Merged {} animation groups with {} total directional animations",
-            non_empty_count, total_animations
-        );
-        println!(
-            "Total merged: {} frames, {} img_data entries",
-            merged_frame_data.len(),
-            merged_img_data.len()
-        );
-
-        println!("\n=== IMG_DATA VERIFICATION ===");
-        println!("Total img_data entries: {}", merged_img_data.len());
-        println!("Monster tiles: 0-{}", monster_img_count - 1);
-        println!("M_attack tiles should start at: {}", monster_img_count);
-        println!("\nChecking boundary:");
-        println!(
-            "  img_data[31]: {} bytes (last monster)",
-            merged_img_data[31].img_px.len()
-        );
-        println!(
-            "  img_data[32]: {} bytes (first m_attack)",
-            merged_img_data[32].img_px.len()
-        );
-        println!("\nChecking frame 280's tiles (after merge offset would be 57-60):");
-        println!("  img_data[56]: {} bytes", merged_img_data[56].img_px.len());
-        println!("  img_data[57]: {} bytes", merged_img_data[57].img_px.len());
-        println!("  img_data[58]: {} bytes", merged_img_data[58].img_px.len());
-        println!("  img_data[59]: {} bytes", merged_img_data[59].img_px.len());
-        println!("  img_data[60]: {} bytes", merged_img_data[60].img_px.len());
-
         WanFile {
             img_data: merged_img_data,
             frame_data: merged_frame_data,

@@ -282,13 +282,6 @@ fn render_piece(
 
     let adjusted_idx = tile_num.saturating_sub(1) as usize;
 
-    println!(
-        "TILE ACCESS: piece tile_num={}, adjusted_idx={}, img_data_len={}",
-        tile_num,
-        adjusted_idx,
-        wan.img_data.len()
-    );
-
     let pixel_buffer: &[u8] = if is_256_colour_mode {
         // Use the pre-computed lookup
         if let Some(ref lookup) = wan.tile_lookup_8bpp {
