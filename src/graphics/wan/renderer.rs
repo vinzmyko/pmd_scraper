@@ -357,6 +357,12 @@ fn render_piece(
     if !has_visible_pixels {
         return Ok(false);
     }
+    if piece.h_flip {
+        piece_img = image::imageops::flip_horizontal(&piece_img)
+    }
+    if piece.v_flip {
+        piece_img = image::imageops::flip_vertical(&piece_img)
+    }
     imageops::overlay(image, &piece_img, pos.0 as i64, pos.1 as i64);
 
     Ok(has_visible_pixels)
