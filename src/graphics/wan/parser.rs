@@ -1198,3 +1198,31 @@ fn read_animation_groups(
 
     Ok((anim_groups, anim_sequences))
 }
+
+fn detect_zero_based_indexing(frame_data: &[MetaFrame], img_data_len: usize) -> bool {
+    let mut max_tile_num = 0;
+    let mut min_nonzero_tile_num = u16::MAX;
+
+    for frame in frame_data {
+        for piece in &frame.pieces {
+            if piece.tile_num == 0 {
+                continue;
+            }
+            max_tile_num = max_tile_num.max(piece.tile_num);
+            min_nonzero_tile_num = min_nonzero_tile_num.min(piece.tile_num);
+        }
+    }
+
+    let is_zero_based = (max_tile_num as usize) < img_data_len;
+
+    println!("  [TILE INDEXING DETECTION]");
+    println!("    img_data.len() = {}", img_data_len);
+    println!("    min tile_num = {}", min_nonzero_tile_num);
+    println!("    max tile_num = {}", max_tile_num);
+    println!(
+        "    detected as: {}",
+        if is_zero_based { "0-BASED" } else { "1-BASED" }
+    );
+
+    is_zero_based
+}

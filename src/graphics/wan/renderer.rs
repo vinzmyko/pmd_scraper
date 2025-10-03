@@ -14,7 +14,11 @@ use image::{imageops, Rgba, RgbaImage};
 const CENTRE_X: i16 = 256;
 
 /// Extract a single frame from a WAN file
-pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanError> {
+pub fn extract_frame(
+    wan: &WanFile,
+    frame_idx: usize,
+    source_bin: &str,
+) -> Result<RgbaImage, WanError> {
     if frame_idx >= wan.frame_data.len() {
         return Err(WanError::OutOfBounds(format!(
             "Frame index {} out of bounds (max: {})",
@@ -56,6 +60,7 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
             (pos_x as i32, pos_y as i32),
             (dimensions.0 * TEX_SIZE, dimensions.1 * TEX_SIZE),
             palette,
+            source_bin,
         )?;
     }
 
@@ -66,6 +71,7 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
 pub fn render_effect_animation_sheet(
     wan_file: &WanFile,
     animation_index: usize,
+    source_bin: &str,
 ) -> Result<Option<(RgbaImage, u32, u32)>, WanError> {
     let animation = match &wan_file.animations {
         AnimationStructure::Effect(anims) => anims.get(animation_index),
@@ -101,7 +107,8 @@ pub fn render_effect_animation_sheet(
         let meta_frame_index = seq_frame.frame_index as usize;
 
         if meta_frame_index < wan_file.frame_data.len() {
-            let frame_image = render_meta_frame_on_canvas(wan_file, meta_frame_index, canvas_box)?;
+            let frame_image =
+                render_meta_frame_on_canvas(wan_file, meta_frame_index, canvas_box, source_bin)?;
             rendered_frames.push(frame_image);
         } else {
             rendered_frames.push(RgbaImage::new(frame_width, frame_height));
@@ -170,6 +177,7 @@ fn render_meta_frame_on_canvas(
     wan: &WanFile,
     meta_frame_index: usize,
     canvas_box: (i16, i16, i16, i16),
+    source_bin: &str,
 ) -> Result<RgbaImage, WanError> {
     let canvas_width = (canvas_box.2 - canvas_box.0).max(1) as u32;
     let canvas_height = (canvas_box.3 - canvas_box.1).max(1) as u32;
@@ -201,6 +209,7 @@ fn render_meta_frame_on_canvas(
             (pos_x as i32, pos_y as i32),
             (dimensions.0 * TEX_SIZE, dimensions.1 * TEX_SIZE),
             palette,
+            source_bin,
         )?;
     }
 
@@ -263,6 +272,7 @@ fn render_piece(
     pos: (i32, i32),
     dimensions: (usize, usize),
     palette: &[(u8, u8, u8, u8)],
+    source_bin: &str,
 ) -> Result<bool, WanError> {
     let (width, height) = dimensions;
     if width == 0 || height == 0 || palette.is_empty() {
@@ -280,7 +290,11 @@ fn render_piece(
 
     let tile_num = piece.tile_num as usize;
 
-    let adjusted_idx = tile_num.saturating_sub(1) as usize;
+    let adjusted_idx = if source_bin == "monster" {
+        tile_num.saturating_sub(1) // monster.bin uses 1-based
+    } else {
+        tile_num // m_attack.bin and effect.bin use 0-based
+    };
 
     let pixel_buffer: &[u8] = if is_256_colour_mode {
         // Use the pre-computed lookup
@@ -298,8 +312,7 @@ fn render_piece(
         }
     } else {
         // For 4bpp, each tile is its own ImgPiece
-        //wan.img_data.get(adjusted_idx).map_or(&[], |p| &p.img_px)
-        wan.img_data.get(tile_num).map_or(&[], |p| &p.img_px)
+        wan.img_data.get(adjusted_idx).map_or(&[], |p| &p.img_px)
     };
 
     if pixel_buffer.is_empty() {

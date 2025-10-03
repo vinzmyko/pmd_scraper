@@ -438,7 +438,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
         let attack_wan = self.extract_wan_file(context.m_attack_bin, sprite_index)?;
 
         let mut wan_files = HashMap::new();
-        // wan_files.insert("monster".to_string(), monster_wan);
+        wan_files.insert("monster".to_string(), monster_wan);
         wan_files.insert("m_attack".to_string(), attack_wan);
 
         println!("Generating sprite atlas for {}...", folder_name);

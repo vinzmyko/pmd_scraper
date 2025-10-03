@@ -163,7 +163,7 @@ impl<'a> EffectAssetPipeline<'a> {
         let wan_file = self.wan_cache.get(&file_index).unwrap();
 
         // Render the sprite sheet in memory
-        match renderer::render_effect_animation_sheet(wan_file, anim_index) {
+        match renderer::render_effect_animation_sheet(wan_file, anim_index, "effect") {
             Ok(Some((sprite_sheet, frame_width, frame_height))) => {
                 // Save the in memory image buffer to disk
                 let sheet_filename = format!("{}.png", effect_id);

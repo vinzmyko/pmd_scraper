@@ -71,7 +71,7 @@ pub fn analyse_frames(
                                 continue;
                             }
 
-                            let frame_image = match extract_frame(wan_file, frame_index) {
+                            let frame_image = match extract_frame(wan_file, frame_index, source_bin_name) {
                                 Ok(img) => img,
                                 Err(_) => continue,
                             };
@@ -79,36 +79,6 @@ pub fn analyse_frames(
                             let bounds = find_content_bounds(&frame_image);
                             let content_width = (bounds.2 - bounds.0).max(0) as u32;
                             let content_height = (bounds.3 - bounds.1).max(0) as u32;
-
-                            if content_width == 0 || content_height == 0 {
-                                println!("TRANSPARENT CODE");
-                                println!("  [DEBUG] Empty frame detected in {}:", source_bin_name);
-                                println!(
-                                    "    - Animation: {}, Direction: {}, Sequence: {}",
-                                    group_id, dir_idx, seq_idx
-                                );
-                                println!("    - Frame index: {}", frame_index);
-                                println!(
-                                    "    - frame_data pieces count: {}",
-                                    wan_file.frame_data[frame_index].pieces.len()
-                                );
-
-                                if !wan_file.frame_data[frame_index].pieces.is_empty() {
-                                    let first_piece = &wan_file.frame_data[frame_index].pieces[0];
-                                    println!(
-                                        "    - First piece tile_num: {}",
-                                        first_piece.tile_num
-                                    );
-                                    println!(
-                                        "    - First piece dimensions: {:?}",
-                                        first_piece.get_dimensions()
-                                    );
-                                    println!(
-                                        "    - Total img_data entries: {}",
-                                        wan_file.img_data.len()
-                                    );
-                                }
-                            }
 
                             max_content_width = max_content_width.max(content_width);
                             max_content_height = max_content_height.max(content_height);
