@@ -156,8 +156,11 @@ impl<'a> PokemonSpriteExtractor<'a> {
             }
             //final_list = list;
             //let mut folder_name = format!("pokemon_{:03}", dex_num);
-            let pikachu: (usize, String) = (25 as usize, "pokemon_025".to_string());
-            final_list = vec![pikachu];
+            let charmander: (usize, String) = (4 as usize, "pokemon_4".to_string());
+            let charmeleon: (usize, String) = (5 as usize, "pokemon_5".to_string());
+            let charizard: (usize, String) = (6 as usize, "pokemon_6".to_string());
+            let squirtle: (usize, String) = (7 as usize, "pokemon_7".to_string());
+            final_list = vec![charmander, charmeleon, charizard, squirtle];
         }
 
         println!("Found {} useful entries to process.", final_list.len());
@@ -439,7 +442,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
 
         let mut wan_files = HashMap::new();
         wan_files.insert("monster".to_string(), monster_wan);
-        wan_files.insert("m_attack".to_string(), attack_wan);
+        // wan_files.insert("m_attack".to_string(), attack_wan);
 
         println!("Generating sprite atlas for {}...", folder_name);
 
