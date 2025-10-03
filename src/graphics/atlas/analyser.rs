@@ -116,6 +116,27 @@ pub fn analyse_frames(
                                     final_placement_y: 0,
                                 },
                             ));
+
+                            let frame_count = ordered_frames.len() - 1;
+                            if frame_count >= 278 && frame_count <= 282 {
+                                println!(
+                                    "\n=== Frame {} (anim={} dir={} seq={}) ===",
+                                    frame_count, anim_id, dir_idx, seq_idx
+                                );
+                                println!(
+                                    "Source: {}, wan_frame_index: {}",
+                                    source_bin_name, frame_index
+                                );
+
+                                // Show the tile numbers for this frame's pieces
+                                if frame_index < wan_file.frame_data.len() {
+                                    let frame = &wan_file.frame_data[frame_index];
+                                    println!("Pieces in this frame:");
+                                    for (i, piece) in frame.pieces.iter().enumerate() {
+                                        println!("  Piece {}: tile_num={}", i, piece.tile_num);
+                                    }
+                                }
+                            }
                         }
                     }
                 }

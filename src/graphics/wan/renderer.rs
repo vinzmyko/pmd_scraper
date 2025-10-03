@@ -273,6 +273,11 @@ fn render_piece(
     let mut has_visible_pixels = false;
 
     let is_256_colour_mode = piece.is_256_colour;
+
+    if piece.tile_num == 0 {
+        return Ok(false);
+    }
+
     let tile_num = piece.tile_num as usize;
 
     let adjusted_idx = tile_num.saturating_sub(1) as usize;
