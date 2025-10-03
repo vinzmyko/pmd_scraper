@@ -405,140 +405,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
         })
     }
 
-    fn merge_wan_files(&self, monster_wan: WanFile, attack_wan: WanFile) -> WanFile {
-        println!("\n=== Starting WAN merge ===");
-
-        // Extract the animation groups
-        let monster_groups = match monster_wan.animations {
-            AnimationStructure::Character(groups) => groups,
-            AnimationStructure::Effect(_) => vec![],
-        };
-
-        let attack_groups = match attack_wan.animations {
-            AnimationStructure::Character(groups) => groups,
-            AnimationStructure::Effect(_) => vec![],
-        };
-
-        // Get counts for adjustment
-        let monster_frame_count = monster_wan.frame_data.len();
-        let monster_img_count = monster_wan.img_data.len();
-
-        println!(
-            "Frame counts: monster={}, m_attack={}",
-            monster_frame_count,
-            attack_wan.frame_data.len()
-        );
-        println!(
-            "Image data counts: monster={}, m_attack={}",
-            monster_img_count,
-            attack_wan.img_data.len()
-        );
-
-        // Merge img_data
-        let mut merged_img_data = monster_wan.img_data.clone();
-        merged_img_data.extend(attack_wan.img_data.clone());
-
-        // Merge frame_data, but adjust tile_num references for m_attack frames
-        let mut merged_frame_data = monster_wan.frame_data.clone();
-
-        for mut frame in attack_wan.frame_data.clone() {
-            for piece in &mut frame.pieces {
-                piece.tile_num += monster_img_count as u16;
-            }
-            merged_frame_data.push(frame);
-        }
-
-        // Merge body_part_offset_data
-        let mut merged_offsets = monster_wan.body_part_offset_data.clone();
-        merged_offsets.extend(attack_wan.body_part_offset_data.clone());
-
-        const MAX_STANDARD_ANIMATIONS: usize = 13;
-        let mut merged_groups: Vec<Vec<Animation>> = vec![vec![]; MAX_STANDARD_ANIMATIONS];
-
-        for anim_id in 0..MAX_STANDARD_ANIMATIONS {
-            let info = crate::data::animation_metadata::AnimationInfo::find_by_id(anim_id as u8);
-
-            let monster_has_it =
-                anim_id < monster_groups.len() && !monster_groups[anim_id].is_empty();
-            let attack_has_it = anim_id < attack_groups.len() && !attack_groups[anim_id].is_empty();
-
-            if let Some(info) = info {
-                match info.source {
-                    "monster" => {
-                        if monster_has_it {
-                            merged_groups[anim_id] = monster_groups[anim_id].clone();
-                        } else if attack_has_it {
-                            let mut group = attack_groups[anim_id].clone();
-                            for animation in &mut group {
-                                for frame in &mut animation.frames {
-                                    frame.frame_index += monster_frame_count as u16;
-                                }
-                            }
-                            merged_groups[anim_id] = group;
-                        }
-                    }
-                    "m_attack" => {
-                        if attack_has_it {
-                            let mut group = attack_groups[anim_id].clone();
-                            for animation in &mut group {
-                                for frame in &mut animation.frames {
-                                    frame.frame_index += monster_frame_count as u16;
-                                }
-                            }
-                            merged_groups[anim_id] = group;
-                        } else if monster_has_it {
-                            merged_groups[anim_id] = monster_groups[anim_id].clone();
-                        }
-                    }
-                    "either" => {
-                        if attack_has_it {
-                            let mut group = attack_groups[anim_id].clone();
-                            for animation in &mut group {
-                                for frame in &mut animation.frames {
-                                    frame.frame_index += monster_frame_count as u16;
-                                }
-                            }
-                            merged_groups[anim_id] = group;
-                        } else if monster_has_it {
-                            merged_groups[anim_id] = monster_groups[anim_id].clone();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        for (group_id, group) in merged_groups.iter_mut().enumerate() {
-            if group_id == 12 && !group.is_empty() {
-                for animation in group.iter_mut() {
-                    for frame in animation.frames.iter_mut() {
-                        if frame.frame_index >= merged_frame_data.len() as u16 {
-                            println!(
-                                "FIXING: Animation 12 frame index {} -> {}",
-                                frame.frame_index,
-                                merged_frame_data.len() - 1
-                            );
-                            frame.frame_index = (merged_frame_data.len() - 1) as u16;
-                        }
-                    }
-                }
-            }
-        }
-
-        WanFile {
-            img_data: merged_img_data,
-            frame_data: merged_frame_data,
-            animations: AnimationStructure::Character(merged_groups),
-            body_part_offset_data: merged_offsets,
-            custom_palette: attack_wan.custom_palette,
-            effect_specific_palette: attack_wan.effect_specific_palette,
-            sdw_size: attack_wan.sdw_size,
-            wan_type: attack_wan.wan_type,
-            palette_offset: attack_wan.palette_offset,
-            tile_lookup_8bpp: attack_wan.tile_lookup_8bpp,
-        }
-    }
-
     /// Process a single Pokemon's sprite data
     fn process_pokemon(
         &self,
@@ -571,26 +437,9 @@ impl<'a> PokemonSpriteExtractor<'a> {
         let monster_wan = self.extract_wan_file(context.monster_bin, sprite_index)?;
         let attack_wan = self.extract_wan_file(context.m_attack_bin, sprite_index)?;
 
-        println!("\n=== CHECKING RAW PARSED TILE NUMBERS ===");
-        if monster_wan.frame_data.len() > 0 && !monster_wan.frame_data[0].pieces.is_empty() {
-            println!("monster.bin frame 0, first 3 pieces:");
-            for piece in monster_wan.frame_data[0].pieces.iter().take(3) {
-                println!("  tile_num={}", piece.tile_num);
-            }
-        }
-
-        if attack_wan.frame_data.len() > 0 && !attack_wan.frame_data[0].pieces.is_empty() {
-            println!("m_attack.bin frame 0, first 3 pieces:");
-            for piece in attack_wan.frame_data[0].pieces.iter().take(3) {
-                println!("  tile_num={}", piece.tile_num);
-            }
-        }
-
-        // Merge and log post-merge stats
-        let merged_wan = self.merge_wan_files(monster_wan, attack_wan);
-
         let mut wan_files = HashMap::new();
-        wan_files.insert("merged".to_string(), merged_wan);
+        // wan_files.insert("monster".to_string(), monster_wan);
+        wan_files.insert("m_attack".to_string(), attack_wan);
 
         println!("Generating sprite atlas for {}...", folder_name);
 

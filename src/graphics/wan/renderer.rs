@@ -298,7 +298,8 @@ fn render_piece(
         }
     } else {
         // For 4bpp, each tile is its own ImgPiece
-        wan.img_data.get(adjusted_idx).map_or(&[], |p| &p.img_px)
+        //wan.img_data.get(adjusted_idx).map_or(&[], |p| &p.img_px)
+        wan.img_data.get(tile_num).map_or(&[], |p| &p.img_px)
     };
 
     if pixel_buffer.is_empty() {
