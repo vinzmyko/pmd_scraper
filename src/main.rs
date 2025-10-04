@@ -127,7 +127,6 @@ fn main() {
             );
 
             write_progress(&cli.progress, 0, 0, "", "complete");
-            fs::remove_file(&cli.progress).expect("Should remove progress bar");
         }
         Err(e) => {
             eprintln!("Failed to read ROM file, possibly corrupted: {}", e);

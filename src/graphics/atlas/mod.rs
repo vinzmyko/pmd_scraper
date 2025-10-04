@@ -112,16 +112,6 @@ pub fn create_pokemon_atlas(
     output_dir: &Path,
     folder_name: &str,
 ) -> Result<AtlasResult, AtlasError> {
-    // --- DIAGNOSTIC START ---
-    let problem_ids: std::collections::HashSet<u16> = [
-        162, 195, 208, 215, 217, 226, 229, 230, 26, 50, 51, 487, 486, 419, 386, 352, 480, 483,
-    ]
-    .iter()
-    .cloned()
-    .collect();
-    let is_problematic = problem_ids.contains(&dex_num);
-    // --- DIAGNOSTIC END ---
-
     if wan_files.is_empty() {
         return Err(AtlasError::NoWanFilesProvided);
     }
@@ -155,61 +145,8 @@ pub fn create_pokemon_atlas(
         generator::prepare_frames(&mut frame_analysis, frame_width, frame_height)?;
     println!("  Prepared {} frames for atlas.", prepared_frames.len());
 
-    let (unique_frames, frame_mapping) = if config.deduplicate_frames {
-        let (unique, mapping) = generator::deduplicate_frames(&prepared_frames);
-        println!(
-            "  Deduplication result: {} unique frames (reduced from {}).",
-            unique.len(),
-            prepared_frames.len()
-        );
-        (unique, mapping)
-    } else {
-        (
-            prepared_frames,
-            (0..frame_analysis.total_original_frames).collect(),
-        )
-    };
-
-    // --- CRITICAL DIAGNOSTIC BLOCK ---
-    if is_problematic {
-        println!(
-            "[DIAGNOSTIC] === Atlas Layout Inputs for Dex #{} ===",
-            dex_num
-        );
-        println!(
-            "  1. Total original frames analyzed: {}",
-            frame_analysis.total_original_frames
-        );
-        println!(
-            "  2. Max content size from analysis: {}x{}",
-            frame_analysis.max_content_size.0, frame_analysis.max_content_size.1
-        );
-        println!(
-            "  3. Calculated optimal frame size (padded & rounded): {}x{}",
-            frame_width, frame_height
-        );
-        println!(
-            "  4. Total unique frames after deduplication: {}",
-            unique_frames.len()
-        );
-    }
-    // --- END CRITICAL DIAGNOSTIC BLOCK ---
-
     let atlas_layout =
-        generator::create_atlas_layout(unique_frames.len(), frame_width, frame_height);
-
-    // --- CRITICAL DIAGNOSTIC BLOCK 2 ---
-    if is_problematic {
-        println!("[DIAGNOSTIC] === Atlas Layout Results ===");
-        println!("  - Frames per row: {}", atlas_layout.frames_per_row);
-        println!("  - Rows: {}", atlas_layout.rows);
-        println!(
-            "  - Final Atlas Dimensions: {}x{}",
-            atlas_layout.dimensions.0, atlas_layout.dimensions.1
-        );
-        println!("[DIAGNOSTIC] =======================================");
-    }
-    // --- END CRITICAL DIAGNOSTIC BLOCK 2 ---
+        generator::create_atlas_layout(prepared_frames.len(), frame_width, frame_height);
 
     println!(
         "  Atlas layout created: {}x{} grid, {}x{} total pixels.",
@@ -220,7 +157,7 @@ pub fn create_pokemon_atlas(
     );
 
     println!("  Generating atlas image...");
-    let atlas_image = generator::generate_atlas(&unique_frames, &atlas_layout)?;
+    let atlas_image = generator::generate_atlas(&prepared_frames, &atlas_layout)?;
 
     println!("  Generating metadata...");
     let shadow_size = get_shadow_size(wan_files);
@@ -230,7 +167,6 @@ pub fn create_pokemon_atlas(
         frame_width,
         frame_height,
         &atlas_layout,
-        &frame_mapping,
         shadow_size,
     )?;
 
@@ -258,13 +194,13 @@ pub fn create_pokemon_atlas(
         println!("  Saving debug frames...");
         let debug_dir = pokemon_dir.join("debug_unique_frames");
         fs::create_dir_all(&debug_dir)?;
-        for (i, frame) in unique_frames.iter().enumerate() {
+        for (i, frame) in prepared_frames.iter().enumerate() {
             let frame_path = debug_dir.join(format!("unique_frame_{:04}.png", i));
             frame.save(&frame_path)?;
         }
         println!(
-            "  Saved {} unique frames to {}",
-            unique_frames.len(),
+            "  Saved {} frames to {}",
+            prepared_frames.len(),
             debug_dir.display()
         );
     }

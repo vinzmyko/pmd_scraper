@@ -84,20 +84,18 @@ pub fn generate_metadata(
     frame_width: u32,
     frame_height: u32,
     layout: &AtlasLayout,
-    frame_mapping: &[usize],
     shadow_size: u8,
 ) -> Result<AtlasMetadata, super::AtlasError> {
     let mut output_animations: HashMap<String, AtlasAnimationInfo> = HashMap::new();
-    let total_unique_frames = frame_mapping.iter().max().map_or(0, |&max_idx| max_idx + 1);
+    let total_frames = analysis.ordered_frames.len();
 
     for (original_global_index, (anim_id, dir_idx, sequence_idx, analysed_frame)) in
         analysis.ordered_frames.iter().enumerate()
     {
-        let unique_atlas_index = frame_mapping[original_global_index];
-        let unique_atlas_index_u32 = unique_atlas_index as u32;
+        let atlas_index = original_global_index as u32;
 
-        let atlas_col = (unique_atlas_index % layout.frames_per_row as usize) as u32;
-        let atlas_row = (unique_atlas_index / layout.frames_per_row as usize) as u32;
+        let atlas_col = (original_global_index % layout.frames_per_row as usize) as u32;
+        let atlas_row = (original_global_index / layout.frames_per_row as usize) as u32;
         let sheet_x = atlas_col * frame_width;
         let sheet_y = atlas_row * frame_height;
 
@@ -155,7 +153,7 @@ pub fn generate_metadata(
         let centre_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.centre));
 
         let frame_info = FrameInfo {
-            idx: unique_atlas_index_u32,
+            idx: atlas_index,
             sheet_x,
             sheet_y,
             duration: original_seq_frame.duration,
@@ -209,7 +207,7 @@ pub fn generate_metadata(
         atlas_image: format!("{:03}_atlas.png", analysis.dex_num),
         frame_width,
         frame_height,
-        total_frames_in_atlas: total_unique_frames as u32,
+        total_frames_in_atlas: total_frames as u32,
         shadow_size,
         animations: output_animations,
     })

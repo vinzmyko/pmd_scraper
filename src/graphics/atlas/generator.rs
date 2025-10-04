@@ -5,10 +5,7 @@
 
 use crate::graphics::atlas::analyser::FrameAnalysis;
 
-use std::{
-    collections::{HashMap, hash_map::Entry},
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 use image::{imageops, RgbaImage};
 use twox_hash::XxHash64;
@@ -137,47 +134,6 @@ pub fn generate_atlas(
     }
 
     Ok(atlas)
-}
-
-/// Deduplicates frames by comparing pixel data using xxHash
-///
-/// Returns a tuple: `(Vec<RgbaImage>, Vec<usize>)` where the first element
-/// is the vector of unique frames, and the second is a mapping vector where
-/// `mapping[original_index] = unique_index`.
-pub fn deduplicate_frames(frames: &[RgbaImage]) -> (Vec<RgbaImage>, Vec<usize>) {
-    let mut unique_frames_map: HashMap<u64, usize> = HashMap::new();
-    let mut unique_frames_vec = Vec::new();
-    let mut frame_mapping = Vec::with_capacity(frames.len());
-
-    for frame in frames {
-        let frame_hash = calculate_frame_hash(frame);
-
-        let unique_index = match unique_frames_map.entry(frame_hash) {
-            Entry::Occupied(entry) => {
-                let candidate_idx = *entry.get();
-                // Verify to handle hash collisions
-                if frames_are_identical(frame, &unique_frames_vec[candidate_idx]) {
-                    candidate_idx
-                } else {
-                    // Hash collision - still a unique frame
-                    let new_idx = unique_frames_vec.len();
-                    unique_frames_vec.push(frame.clone());
-                    unique_frames_map.insert(frame_hash, new_idx);
-                    new_idx
-                }
-            }
-            Entry::Vacant(entry) => {
-                let index = unique_frames_vec.len();
-                unique_frames_vec.push(frame.clone());
-                entry.insert(index);
-                index
-            }
-        };
-
-        frame_mapping.push(unique_index);
-    }
-
-    (unique_frames_vec, frame_mapping)
 }
 
 /// Calculate a 64-bit hash of an image frame for fast comparison
