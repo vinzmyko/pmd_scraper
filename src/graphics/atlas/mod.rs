@@ -135,6 +135,7 @@ pub fn create_pokemon_atlas(
         pokemon_id, dex_num
     );
     let mut frame_analysis = analyser::analyse_frames(wan_files, dex_num)?;
+    analyser::establish_canonical_reference(&mut frame_analysis);
     if frame_analysis.ordered_frames.is_empty() {
         return Err(AtlasError::NoFramesFound);
     }

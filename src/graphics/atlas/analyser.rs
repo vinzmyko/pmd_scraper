@@ -36,6 +36,8 @@ pub struct AnalysedFrame {
 
     pub final_placement_x: i32,
     pub final_placement_y: i32,
+
+    pub content_bounds: (i32, i32, i32, i32),
 }
 
 /// Analyses frames from all provided WAN files for a single Pokemon
@@ -114,6 +116,7 @@ pub fn analyse_frames(
                                     group_idx: group_id,
                                     final_placement_x: 0,
                                     final_placement_y: 0,
+                                    content_bounds: bounds,
                                 },
                             ));
                         }
@@ -185,5 +188,27 @@ pub fn round_up_to_multiple_of_8(n: u32) -> u32 {
         8
     } else {
         n.div_ceil(8) * 8
+    }
+}
+
+pub fn establish_canonical_reference(analysis: &mut FrameAnalysis) {
+    let mut shadow_freq: HashMap<(i16, i16), usize> = HashMap::new();
+
+    for (_, _, _, frame) in &analysis.ordered_frames {
+        let shadow_pos = (frame.original_shadow_x, frame.original_shadow_y);
+        *shadow_freq.entry(shadow_pos).or_insert(0) += 1;
+    }
+
+    // Find most common shadow position
+    let canonical_shadow = shadow_freq
+        .iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(pos, _)| *pos)
+        .unwrap_or((0, 0));
+
+    // Recalculate all reference points relative to this position
+    for (_, _, _, frame) in &mut analysis.ordered_frames {
+        frame.ref_offset_x = canonical_shadow.0 as i32;
+        frame.ref_offset_y = canonical_shadow.1 as i32;
     }
 }
