@@ -154,7 +154,15 @@ impl<'a> PokemonSpriteExtractor<'a> {
                     list.push((i, folder_name));
                 }
             }
-            final_list = list;
+            //final_list = list;
+            let venusaur: (usize, String) = (3 as usize, "pokemon_003".to_string());
+            let charmander: (usize, String) = (4 as usize, "pokemon_004".to_string());
+            let charmeleon: (usize, String) = (5 as usize, "pokemon_005".to_string());
+            let charizard: (usize, String) = (6 as usize, "pokemon_006".to_string());
+            let squirtle: (usize, String) = (7 as usize, "pokemon_007".to_string());
+            let pikachu: (usize, String) = (25 as usize, "pokemon_025".to_string());
+
+            final_list = vec![venusaur, charmander, charmeleon, charizard, squirtle, pikachu];
         }
 
         println!("Found {} useful entries to process.", final_list.len());
