@@ -146,7 +146,9 @@ pub fn generate_metadata(
         let original_ref_y = analysed_frame.ref_offset_y;
 
         let adjust_offset_relative = |orig_offset: Option<(i16, i16)>| -> Option<[i32; 2]> {
-            orig_offset.map(|(ox, oy)| [ox as i32 - original_ref_x, oy as i32 - original_ref_y])
+            orig_offset.map(|(ox, oy)| {
+                [ox as i32 - original_ref_x, oy as i32 - original_ref_y]
+            })
         };
 
         let head_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.head));
@@ -161,8 +163,8 @@ pub fn generate_metadata(
             duration: original_seq_frame.duration,
             offset_x: original_seq_frame.offset.0 as i32,
             offset_y: original_seq_frame.offset.1 as i32,
-            shadow_offset_x: analysed_frame.original_shadow_x as i32,
-            shadow_offset_y: analysed_frame.original_shadow_y as i32,
+            shadow_offset_x: analysed_frame.original_shadow_x as i32 - original_ref_x,
+            shadow_offset_y: analysed_frame.original_shadow_y as i32 - original_ref_y,
             is_hit_frame: original_seq_frame.is_hit_point(),
             is_return_frame: original_seq_frame.is_return_point(),
             is_rush_frame: original_seq_frame.is_rush_point(),
