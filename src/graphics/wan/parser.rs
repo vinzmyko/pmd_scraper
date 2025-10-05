@@ -1039,9 +1039,9 @@ fn read_meta_frames(
     let mut ptrs = Vec::new();
     while cursor.position() < ptr_frames_ref_table_end {
         if let Ok(ptr) = read_u32_le(cursor) {
-            if ptr != 0 {
-                ptrs.push(ptr);
-            }
+            // Pushing when ptr == 0 means pushing null ptrs this allows us to get the starting
+            // frame, but pads the blank frame to the ptrs vec
+            ptrs.push(ptr);
         } else {
             break;
         }
@@ -1049,9 +1049,15 @@ fn read_meta_frames(
 
     let mut meta_frames = Vec::with_capacity(ptrs.len());
     for &ptr in &ptrs {
+        if ptr == 0 {
+            meta_frames.push(MetaFrame { pieces: vec![] });
+        }
+
         if (ptr as u64) >= cursor.get_ref().len() as u64 {
+            meta_frames.push(MetaFrame { pieces: vec![] });
             continue;
         }
+
         cursor.seek(SeekFrom::Start(ptr as u64))?;
         let mut pieces = Vec::new();
         loop {

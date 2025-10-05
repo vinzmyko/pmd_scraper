@@ -67,7 +67,15 @@ pub fn analyse_frames(
                     }
                     for (dir_idx, direction_anim) in group.iter().enumerate() {
                         for (seq_idx, seq_frame) in direction_anim.frames.iter().enumerate() {
-                            let frame_index = seq_frame.frame_index as usize;
+                            // HACK: Pushing null ptrs allows access to the first frame in the
+                            // animation, but pushes the window one to the left meaning ignores the
+                            // last walk animation frame, so we add it back in
+                            let frame_index = (seq_frame.frame_index).saturating_add(1) as usize;
+
+                            // Ignore the blank frame create due to pushing null ptrs
+                            if frame_index == 0 {
+                                continue;
+                            }
 
                             if frame_index >= wan_file.frame_data.len() {
                                 continue;
