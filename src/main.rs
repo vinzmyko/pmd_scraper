@@ -3,6 +3,7 @@ mod arm9;
 mod binary_utils;
 mod effect_sprite_extractor;
 mod filesystem;
+mod move_data_extractor;
 mod move_effects_index;
 mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
@@ -22,7 +23,7 @@ use crate::progress::write_progress;
 
 use {
     animation_info_extractor::AnimationInfoExtractor, effect_sprite_extractor::EffectAssetPipeline,
-    pokemon_portrait_extractor::PortraitExtractor,
+    move_data_extractor::MoveDataExtractor, pokemon_portrait_extractor::PortraitExtractor,
     pokemon_sprite_extractor::PokemonSpriteExtractor, rom::Rom,
 };
 
@@ -78,6 +79,9 @@ fn main() {
             let anim_data_info = animation_info_extractor.parse_and_transform_animation_data();
             let _ = animation_info_extractor
                 .save_animation_info_json(&anim_data_info, &output_dir_jsons);
+
+            let move_data_extractor = MoveDataExtractor::new(&rom);
+            let _ = move_data_extractor.extract_and_save(&output_dir_jsons);
 
             let effects_map: HashMap<u16, _> = anim_data_info
                 .effect_table
