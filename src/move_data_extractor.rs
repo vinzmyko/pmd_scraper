@@ -27,7 +27,6 @@
 /// - Currently hardcoded for EoS NA - update `MOVE_NAMES_BEGIN` constant for other regions
 /// - The string table also contains an alphabetical section (used for in-game menus)
 ///   which should NOT be used for move ID mapping
-
 use std::{
     collections::HashMap,
     fs::File,
@@ -343,7 +342,8 @@ impl<'a> MoveDataExtractor<'a> {
 
         let lookup: HashMap<String, u16> = moves
             .iter()
-            .map(|m| (to_snake_case(&m.name), m.move_id)) // transforms each element into a tuple
+            .enumerate()
+            .map(|(idx, m)| (to_snake_case(&m.name), idx as u16)) // transforms each element into a tuple
             .collect(); // convert the tuple to a HashMap
 
         let output_path = output_dir.join("move_lookup.json");
