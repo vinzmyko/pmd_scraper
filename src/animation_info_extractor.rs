@@ -45,8 +45,8 @@ impl<'a> AnimationInfoExtractor<'a> {
 
         self.save_trap_animations_json(&json_dir, &anim_data.trap_table)?;
         self.save_item_animations_json(&json_dir, &anim_data.item_table)?;
-        self.save_move_animations_json(&json_dir, anim_data)?;
-        self.save_effect_animations_json(&json_dir, &anim_data.effect_table)?;
+        self.save_move_animation_info_json(&json_dir, anim_data)?;
+        self.save_effect_animation_table_json(&json_dir, &anim_data.effect_table)?;
 
         self.save_animation_summary(&json_dir, anim_data)?;
 
@@ -88,10 +88,14 @@ impl<'a> AnimationInfoExtractor<'a> {
     }
 
     /// Saves move animation data to JSON as an object mapping move IDs to animation data
-    fn save_move_animations_json(&self, dir: &Path, anim_data: &AnimData) -> Result<(), String> {
-        let file_path = dir.join("moves.json");
-        let file =
-            File::create(&file_path).map_err(|e| format!("Failed to create moves.json: {}", e))?;
+    fn save_move_animation_info_json(
+        &self,
+        dir: &Path,
+        anim_data: &AnimData,
+    ) -> Result<(), String> {
+        let file_path = dir.join("move_animation_info.json");
+        let file = File::create(&file_path)
+            .map_err(|e| format!("Failed to create move_animation_info.json: {}", e))?;
 
         // Transform the raw move data to the final format with embedded special animations
         let move_map = anim_data.transform_move_data();
@@ -105,21 +109,21 @@ impl<'a> AnimationInfoExtractor<'a> {
             .map_err(|e| format!("Failed to serialise move animations: {}", e))?;
 
         println!(
-            "Move animations saved to {} ({} entries)",
+            "Move animation info table saved to {} ({} entries)",
             file_path.display(),
             move_map.len()
         );
         Ok(())
     }
 
-    fn save_effect_animations_json(
+    fn save_effect_animation_table_json(
         &self,
         dir: &Path,
         general_table: &[GeneralAnim],
     ) -> Result<(), String> {
-        let file_path = dir.join("effects.json");
+        let file_path = dir.join("effect_animation_info.json");
         let file = File::create(&file_path)
-            .map_err(|e| format!("Failed to create effects.json: {}", e))?;
+            .map_err(|e| format!("Failed to create effect_animation_info.json: {}", e))?;
 
         // Create a JSON object mapping effect_id to general animation data
         let effect_map: HashMap<String, &GeneralAnim> = general_table
@@ -132,7 +136,7 @@ impl<'a> AnimationInfoExtractor<'a> {
             .map_err(|e| format!("Failed to serialise effect animations: {}", e))?;
 
         println!(
-            "Effect animations saved to {} ({} entries)",
+            "Effect animation info table saved to {} ({} entries)",
             file_path.display(),
             general_table.len()
         );
