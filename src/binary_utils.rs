@@ -13,6 +13,19 @@ pub fn read_u8(cursor: &mut Cursor<&[u8]>) -> io::Result<u8> {
     Ok(buf[0])
 }
 
+pub fn read_i8(cursor: &mut Cursor<&[u8]>) -> io::Result<i8> {
+    if cursor.position() >= cursor.get_ref().len() as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "End of buffer reached",
+        ));
+    }
+
+    let mut buf = [0u8; 1];
+    cursor.read_exact(&mut buf)?;
+    Ok(i8::from_le_bytes(buf))
+}
+
 pub fn read_u16_le(cursor: &mut Cursor<&[u8]>) -> io::Result<u16> {
     if cursor.position() + 1 >= cursor.get_ref().len() as u64 {
         return Err(io::Error::new(
