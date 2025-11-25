@@ -11,6 +11,13 @@ pub const GENERAL_DATA_SIZE: usize = 28;
 pub const SPECIAL_MOVE_DATA_SIZE: usize = 6;
 pub const HEADER_SIZE: usize = 20; // 5 * 4 bytes
 
+// Sound effect constants
+pub const _SFX_SILENCE: u16 = 0x3F00; // 16128 decimal - indicates no sound
+
+// Monster animation type special values
+pub const _MONSTER_ANIM_SPIN: u8 = 99; // Rotate through all 8 directions
+pub const _MONSTER_ANIM_MULTI_DIR: u8 = 98; // Attack in 9 directions (increment by 2)
+
 /// Animation point type for move animations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnimPointType {
@@ -99,19 +106,30 @@ pub struct ItemAnimationInfo {
 /// Represents the raw data format for a move animation entry
 #[derive(Debug, Clone)]
 pub struct RawMoveAnimationInfo {
-    pub effect_id_1: u16,
-    pub effect_id_2: u16,
-    pub effect_id_3: u16,
-    pub effect_id_4: u16,
-    pub dir: u8,
-    pub flag1: bool,
-    pub flag2: bool,
-    pub flag3: bool,
-    pub flag4: bool,
-    pub speed: u32,
-    pub animation: u8,
-    pub point: AnimPointType,
-    pub sfx_id: u16,
+    // Four effect animation layers - can play up to 4 effects simultaneously
+    // No layer is "primary" - game iterates all and plays any non-zero effect
+    pub effect_id_1: u16, // Offset 0x0: Effect layer 1
+    pub effect_id_2: u16, // Offset 0x2: Effect layer 2
+    pub effect_id_3: u16, // Offset 0x4: Effect layer 3
+    pub effect_id_4: u16, // Offset 0x6: Effect layer 4
+
+    // Behavior flags (offset 0x8) - packed into single byte
+    pub animation_category: u8, // Bits 0-2: Animation category (0-7)
+    pub flag_bit3: bool,        // Bit 3: Unknown
+    pub skip_fade_in: bool,     // Bit 4: If true, skip screen fade-in effect
+    pub flag_bit5: bool,        // Bit 5: Unknown
+    pub add_delay: bool,        // Bit 6: If true, add delay after animation
+    pub flag_bit7: bool,        // Bit 7: Unused
+
+    // Offset 0x9-0xB: Padding (3 bytes) - unused, for 4-byte alignment
+
+    // Animation parameters (offset 0xC onwards)
+    pub projectile_speed: u32, // 0=instant, 1=slow(12f), 2=med(8f), other=fast(4f)
+    pub monster_anim_type: u8, // 0-12 (standard), 98 (multi-dir), 99 (spin rotation)
+    pub attachment_point_idx: i8, // -1 to 3: position offset lookup index (SIGNED)
+    pub sound_effect_id: u16,  // Sound effect ID (0x3F00 = silence)
+
+    // Per-Pokemon animation overrides
     pub special_animation_count: u16,
     pub special_animation_start_index: u16,
 }
@@ -119,19 +137,26 @@ pub struct RawMoveAnimationInfo {
 /// Represents the final move animation entry with embedded special animations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoveAnimationInfo {
+    // Effect layers - all can be used simultaneously, no "primary" layer
     pub effect_id_1: u16,
     pub effect_id_2: u16,
     pub effect_id_3: u16,
     pub effect_id_4: u16,
-    pub dir: u8,
-    pub flag1: bool,
-    pub flag2: bool,
-    pub flag3: bool,
-    pub flag4: bool,
-    pub speed: u32,
-    pub animation: u8,
-    pub point: AnimPointType,
-    pub sfx_id: u16,
+
+    // Flags (offset 0x8)
+    pub animation_category: u8, // Bits 0-2: Category (0-7), purpose unknown
+    pub flag_bit3: bool,        // Bit 3: Unknown
+    pub skip_fade_in: bool,     // Bit 4: Skip screen fade-in effect
+    pub flag_bit5: bool,        // Bit 5: Unknown
+    pub add_delay: bool,        // Bit 6: Add post-animation delay
+    pub flag_bit7: bool,        // Bit 7: Unknown/unused
+
+    // Animation parameters
+    pub projectile_speed: u32, // 0=instant, 1=slow(12f), 2=medium(8f), other=fast(4f)
+    pub monster_anim_type: u8, // 0-12=standard, 98=multi-directional, 99=spin
+    pub attachment_point_idx: i8, // -1 to 3: position offset lookup index
+    pub sound_effect_id: u16,  // 0x3F00 (16128) = silence
+
     pub special_animations: Vec<SpecialMoveAnimationInfo>,
 }
 
@@ -143,15 +168,16 @@ impl MoveAnimationInfo {
             effect_id_2: raw.effect_id_2,
             effect_id_3: raw.effect_id_3,
             effect_id_4: raw.effect_id_4,
-            dir: raw.dir,
-            flag1: raw.flag1,
-            flag2: raw.flag2,
-            flag3: raw.flag3,
-            flag4: raw.flag4,
-            speed: raw.speed,
-            animation: raw.animation,
-            point: raw.point,
-            sfx_id: raw.sfx_id,
+            animation_category: raw.animation_category,
+            flag_bit3: raw.flag_bit3,
+            skip_fade_in: raw.skip_fade_in,
+            flag_bit5: raw.flag_bit5,
+            add_delay: raw.add_delay,
+            flag_bit7: raw.flag_bit7,
+            projectile_speed: raw.projectile_speed,
+            monster_anim_type: raw.monster_anim_type,
+            attachment_point_idx: raw.attachment_point_idx,
+            sound_effect_id: raw.sound_effect_id,
             special_animations: specials,
         }
     }
@@ -321,43 +347,48 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
             break;
         }
 
-        let anim1 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
-        let anim2 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
-        let anim3 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
-        let anim4 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        // Read effect IDs (4 layers)
+        let effect_id_1 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        let effect_id_2 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        let effect_id_3 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        let effect_id_4 = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
 
+        // Read and parse flags byte
         let flags = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let dir = (flags & 0x7) as u8;
-        let flag1 = (flags & 0x8) != 0;
-        let flag2 = (flags & 0x10) != 0;
-        let flag3 = (flags & 0x20) != 0;
-        let flag4 = (flags & 0x40) != 0;
+        let animation_category = (flags & 0x7) as u8;
+        let flag_bit3 = (flags & 0x8) != 0;
+        let skip_fade_in = (flags & 0x10) != 0;
+        let flag_bit5 = (flags & 0x20) != 0;
+        let add_delay = (flags & 0x40) != 0;
+        let flag_bit7 = (flags & 0x80) != 0;
 
-        let speed = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let animation = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())?;
-        let point_value = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())?;
-        let point = AnimPointType::from(point_value);
-
-        let sfx = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
-        let spec_entries = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
-        let spec_start = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        // Read animation parameters
+        let projectile_speed = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
+        let monster_anim_type = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())?;
+        let position_offset_idx = binary_utils::read_i8(&mut cursor).map_err(|e| e.to_string())?;
+        let sound_effect_id = binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        let special_animation_count =
+            binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
+        let special_animation_start_index =
+            binary_utils::read_u16_le(&mut cursor).map_err(|e| e.to_string())?;
 
         raw_move_table.push(RawMoveAnimationInfo {
-            effect_id_1: anim1,
-            effect_id_2: anim2,
-            effect_id_3: anim3,
-            effect_id_4: anim4,
-            dir,
-            flag1,
-            flag2,
-            flag3,
-            flag4,
-            speed,
-            animation,
-            point,
-            sfx_id: sfx,
-            special_animation_count: spec_entries,
-            special_animation_start_index: spec_start,
+            effect_id_1,
+            effect_id_2,
+            effect_id_3,
+            effect_id_4,
+            animation_category,
+            flag_bit3,
+            skip_fade_in,
+            flag_bit5,
+            add_delay,
+            flag_bit7,
+            projectile_speed,
+            monster_anim_type,
+            attachment_point_idx: position_offset_idx,
+            sound_effect_id,
+            special_animation_count,
+            special_animation_start_index,
         });
     }
 
