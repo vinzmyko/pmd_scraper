@@ -53,7 +53,7 @@ pub struct FrameInfo {
     /// Top left Y coordinate of this frame's cell in the atlas sheet (in pixels).
     pub sheet_y: u32,
     /// Duration this frame is displayed (in game ticks, typically 1/60th sec).
-    pub duration: u8,
+    pub duration: u16,
     /// X offset to apply when drawing, relative to the standard reference point (feet).
     pub offset_x: i32,
     /// Y offset to apply when drawing, relative to the standard reference point (feet).
@@ -146,9 +146,7 @@ pub fn generate_metadata(
         let original_ref_y = analysed_frame.ref_offset_y;
 
         let adjust_offset_relative = |orig_offset: Option<(i16, i16)>| -> Option<[i32; 2]> {
-            orig_offset.map(|(ox, oy)| {
-                [ox as i32 - original_ref_x, oy as i32 - original_ref_y]
-            })
+            orig_offset.map(|(ox, oy)| [ox as i32 - original_ref_x, oy as i32 - original_ref_y])
         };
 
         let head_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.head));

@@ -32,6 +32,7 @@ pub struct WanFile {
     pub sdw_size: u8,
     pub wan_type: WanType,
     pub palette_offset: u16,
+    pub max_sequences_per_group: u16,
 }
 /// A collection of image data strips
 #[derive(Debug, Clone)]
@@ -134,7 +135,7 @@ impl FrameOffset {
 pub struct SequenceFrame {
     pub frame_index: u16,
     /// in 1/60ths of a second
-    pub duration: u8,
+    pub duration: u16,
     /// Special flags (bit 0 = return, bit 1 = hit)
     pub flag: u8,
     pub is_rush_point: bool,
@@ -147,7 +148,7 @@ pub struct SequenceFrame {
 impl SequenceFrame {
     pub fn new(
         frame_index: u16,
-        duration: u8,
+        duration: u16,
         flag: u8,
         offset: (i16, i16),
         shadow: (i16, i16),

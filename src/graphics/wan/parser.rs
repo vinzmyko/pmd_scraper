@@ -325,7 +325,7 @@ fn read_animation_sequence_character(
 
                 sequence_frames.push(SequenceFrame::new(
                     frame_index,
-                    frame_dur,
+                    frame_dur as u16,
                     flag,
                     (spr_off_x, spr_off_y),
                     (sdw_off_x, sdw_off_y),
@@ -575,7 +575,7 @@ fn read_animation_sequence(cursor: &mut Cursor<&[u8]>, ptr: u32) -> Result<Anima
 
         frames.push(SequenceFrame::new(
             frame_index,
-            frame_dur as u8,
+            frame_dur,
             0,
             (spr_off_x as i16, spr_off_y as i16),
             (0, 0),
