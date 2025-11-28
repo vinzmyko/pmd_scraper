@@ -188,6 +188,7 @@ pub fn parse_character_wan(
             wan_type: WanType::Character,
             palette_offset: 0,
             tile_lookup_8bpp: None,
+            max_sequences_per_group: 0,
         });
     }
 
@@ -276,6 +277,7 @@ pub fn parse_character_wan(
         wan_type: WanType::Character,
         palette_offset: 0,
         tile_lookup_8bpp: None,
+        max_sequences_per_group: 8,
     })
 }
 
@@ -463,6 +465,7 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
 
     let mut frame_data = vec![];
     let mut animations = vec![];
+    let mut max_sequences_per_group: u16 = 1;
 
     if ptr_anim_info > 0 {
         cursor.seek(SeekFrom::Start(ptr_anim_info as u64))?;
@@ -478,6 +481,10 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
             let anim_loc = read_u32_le(&mut cursor)?;
             let anim_length = read_u16_le(&mut cursor)?;
             read_u16_le(&mut cursor)?;
+
+            if anim_length > max_sequences_per_group {
+                max_sequences_per_group = anim_length;
+            }
 
             if anim_loc > 0 && anim_length > 0 {
                 let current_pos = cursor.position();
@@ -529,6 +536,7 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
         wan_type: WanType::Effect,
         palette_offset,
         tile_lookup_8bpp,
+        max_sequences_per_group,
     })
 }
 
@@ -726,6 +734,7 @@ pub fn parse_wan_palette_only(content: &[u8], data_pointer: u32) -> Result<WanFi
         wan_type: WanType::Effect,
         palette_offset: palette_offset_info,
         tile_lookup_8bpp: None,
+        max_sequences_per_group: 0,
     })
 }
 

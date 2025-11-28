@@ -36,6 +36,8 @@ pub struct SpriteEffect {
     #[serde(rename = "frame_height")]
     pub frame_height: u32,
     pub animations: HashMap<String, AnimationSequence>,
+    pub is_directional: bool,
+    pub direction_count: u8,
 }
 
 /// Defines a sequence of animation frames

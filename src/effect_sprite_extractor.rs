@@ -203,6 +203,8 @@ impl<'a> EffectAssetPipeline<'a> {
         frame_width: u32,
         frame_height: u32,
     ) -> EffectDefinition {
+        let direction_count = wan_file.max_sequences_per_group.min(8) as u8;
+        let is_directional = wan_file.max_sequences_per_group >= 8;
         let animation_sequence = match &wan_file.animations {
             AnimationStructure::Effect(anims) => anims.get(animation_index),
             AnimationStructure::Character(_) => None,
@@ -215,6 +217,8 @@ impl<'a> EffectAssetPipeline<'a> {
                     frame_width: 1,
                     frame_height: 1,
                     animations: HashMap::new(),
+                    is_directional,
+                    direction_count,
                 });
             }
         };
@@ -266,6 +270,8 @@ impl<'a> EffectAssetPipeline<'a> {
             frame_width,
             frame_height,
             animations,
+            is_directional,
+            direction_count,
         })
     }
 

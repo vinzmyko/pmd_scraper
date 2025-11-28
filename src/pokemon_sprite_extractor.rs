@@ -551,6 +551,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
             wan_type: attack_wan.wan_type,
             palette_offset: attack_wan.palette_offset,
             tile_lookup_8bpp: attack_wan.tile_lookup_8bpp,
+            max_sequences_per_group: 8,
         }
     }
 
