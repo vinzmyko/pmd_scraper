@@ -187,12 +187,12 @@ impl MoveAnimationInfo {
 pub struct EffectAnimationInfo {
     pub anim_type: AnimType,
     pub file_index: u32,
-    pub unk1: u32,
+    pub palette_index: u32,
     pub animation_index: u32,
     pub sfx_id: i32,
-    pub unk3: u32,
-    pub unk4: bool,
-    pub point: AnimPointType,
+    pub timing_offset: u32,
+    pub screen_effect_param: u8,
+    pub attachment_point: i8,
     pub is_non_blocking: bool,
     pub loop_flag: bool,
 }
@@ -406,14 +406,13 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
         let anim_type = AnimType::from(anim_type_value);
 
         let anim_file = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let unk1 = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let unk2 = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
+        let palette_index = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
+        let animation_index = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
         let sfx = binary_utils::read_i32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let unk3 = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let unk4 = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
+        let timing_offset = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
+        let screen_effect_param = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())?;
 
-        let point_value = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())?;
-        let point = AnimPointType::from(point_value);
+        let point_value = binary_utils::read_i8(&mut cursor).map_err(|e| e.to_string())?;
 
         let unk5 = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
         let loop_flag = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
@@ -421,12 +420,12 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
         effect_table.push(EffectAnimationInfo {
             anim_type,
             file_index: anim_file,
-            unk1,
-            animation_index: unk2,
+            palette_index,
+            animation_index,
             sfx_id: sfx,
-            unk3,
-            unk4,
-            point,
+            timing_offset,
+            screen_effect_param,
+            attachment_point: point_value,
             is_non_blocking: unk5,
             loop_flag,
         });
