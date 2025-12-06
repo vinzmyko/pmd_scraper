@@ -464,8 +464,8 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
     };
 
     let mut frame_data = vec![];
-    let mut animations = vec![];
     let mut max_sequences_per_group: u16 = 1;
+    let mut animation_groups: Vec<Vec<Animation>> = Vec::new();
 
     if ptr_anim_info > 0 {
         cursor.seek(SeekFrom::Start(ptr_anim_info as u64))?;
@@ -475,28 +475,7 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
         let nb_anim_groups = read_u16_le(&mut cursor)?;
 
         // Parse the animation group table to get the list of animation sequence pointers
-        cursor.seek(SeekFrom::Start(ptr_anim_group_table as u64))?;
-        let mut all_anim_pointers = vec![];
-        for _ in 0..nb_anim_groups {
-            let anim_loc = read_u32_le(&mut cursor)?;
-            let anim_length = read_u16_le(&mut cursor)?;
-            read_u16_le(&mut cursor)?;
-
-            if anim_length > max_sequences_per_group {
-                max_sequences_per_group = anim_length;
-            }
-
-            if anim_loc > 0 && anim_length > 0 {
-                let current_pos = cursor.position();
-                cursor.seek(SeekFrom::Start(anim_loc as u64))?;
-                for _ in 0..anim_length {
-                    all_anim_pointers.push(read_u32_le(&mut cursor)?);
-                }
-                cursor.seek(SeekFrom::Start(current_pos))?;
-            }
-        }
-
-        // Seek back to the start of the anim group table to get the meta frame table boundary
+        // Seek to start of anim group table to get the meta frame table boundary
         cursor.seek(SeekFrom::Start(ptr_anim_group_table as u64))?;
         let meta_frames_end_ptr = read_u32_le(&mut cursor)?;
 
@@ -505,30 +484,47 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
         frame_data =
             read_effect_meta_frames(&mut cursor, meta_frames_end_ptr, is_256_colour_val != 0)?;
 
-        // Parse the animation sequences
-        let mut temp_anim_map = std::collections::HashMap::new();
-        for &ptr in &all_anim_pointers {
-            if ptr > 0 && !temp_anim_map.contains_key(&ptr) {
-                let sequence = read_animation_sequence(&mut cursor, ptr)?;
-                temp_anim_map.insert(ptr, sequence);
-            }
-        }
+        // Parse animation groups - store per-group for proper ROM behavior
+        // ROM uses animation_index as sequence index into group 0 ONLY
+        cursor.seek(SeekFrom::Start(ptr_anim_group_table as u64))?;
+        for _ in 0..nb_anim_groups {
+            let anim_loc = read_u32_le(&mut cursor)?;
+            let anim_length = read_u16_le(&mut cursor)?;
+            read_u16_le(&mut cursor)?; // skip loop_start
 
-        animations = all_anim_pointers
-            .iter()
-            .map(|&ptr| {
-                temp_anim_map
-                    .get(&ptr)
-                    .cloned()
-                    .unwrap_or_else(Animation::empty)
-            })
-            .collect();
+            let mut group_animations = Vec::new();
+
+            if anim_loc > 0 && anim_length > 0 {
+                let current_pos = cursor.position();
+                cursor.seek(SeekFrom::Start(anim_loc as u64))?;
+
+                if anim_length > max_sequences_per_group {
+                    max_sequences_per_group = anim_length;
+                }
+
+                for _ in 0..anim_length {
+                    let seq_ptr = read_u32_le(&mut cursor)?;
+                    if seq_ptr > 0 {
+                        let inner_pos = cursor.position();
+                        let sequence = read_animation_sequence(&mut cursor, seq_ptr)?;
+                        group_animations.push(sequence);
+                        cursor.seek(SeekFrom::Start(inner_pos))?;
+                    } else {
+                        group_animations.push(Animation::empty());
+                    }
+                }
+
+                cursor.seek(SeekFrom::Start(current_pos))?;
+            }
+
+            animation_groups.push(group_animations);
+        }
     }
 
     Ok(WanFile {
         img_data,
         frame_data,
-        animations: AnimationStructure::Effect(animations),
+        animations: AnimationStructure::Effect(animation_groups),
         body_part_offset_data: vec![],
         custom_palette,
         effect_specific_palette: None,

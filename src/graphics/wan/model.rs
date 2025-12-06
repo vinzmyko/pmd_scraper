@@ -15,7 +15,7 @@ pub type TileLookup = HashMap<usize, usize>;
 #[derive(Debug, Clone)]
 pub enum AnimationStructure {
     Character(Vec<Vec<Animation>>), // [animation_type][direction]
-    Effect(Vec<Animation>),         // Flat list
+    Effect(Vec<Vec<Animation>>),    // [group][sequence] - but ROM only uses group 0
 }
 
 // TODO: Maybe create a effect and character inside this and CharaWan and EffectWan for better

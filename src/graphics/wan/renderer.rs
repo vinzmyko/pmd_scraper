@@ -67,8 +67,25 @@ pub fn render_effect_animation_sheet(
     wan_file: &WanFile,
     animation_index: usize,
 ) -> Result<Option<(RgbaImage, u32, u32)>, WanError> {
+    // Per ROM behavior: animation_index is a sequence index into group 0 ONLY
     let animation = match &wan_file.animations {
-        AnimationStructure::Effect(anims) => anims.get(animation_index),
+        AnimationStructure::Effect(groups) => {
+            // ROM always uses group 0, animation_index is the sequence index
+            groups.first().and_then(|group| {
+                // Clamp out-of-bounds to 0, matching ROM behavior
+                let clamped_index = if animation_index >= group.len() {
+                    eprintln!(
+                        "Warning: animation_index {} out of bounds (max {}), clamping to 0",
+                        animation_index,
+                        group.len().saturating_sub(1)
+                    );
+                    0
+                } else {
+                    animation_index
+                };
+                group.get(clamped_index)
+            })
+        }
         AnimationStructure::Character(_) => {
             return Err(WanError::InvalidDataStructure(
                 "Character animation structure not supported for effect rendering".to_string(),
