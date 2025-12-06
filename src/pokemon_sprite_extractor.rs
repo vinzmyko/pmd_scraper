@@ -440,7 +440,10 @@ impl<'a> PokemonSpriteExtractor<'a> {
 
         for mut frame in attack_wan.frame_data.clone() {
             for piece in &mut frame.pieces {
-                piece.tile_num += monster_img_count as u16;
+                // 0xFFFF is a -1 marker means "no tile" - preserve it
+                if piece.tile_num != 0xFFFF {
+                    piece.tile_num += monster_img_count as u16;
+                }
             }
             merged_frame_data.push(frame);
         }
