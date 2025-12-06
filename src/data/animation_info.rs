@@ -181,6 +181,30 @@ impl MoveAnimationInfo {
             special_animations: specials,
         }
     }
+
+    /// Returns the number of frames for projectile travel based on ROM speed mapping.
+    ///
+    /// ROM behavior:
+    /// - Speed 0: Instant (no projectile animation)
+    /// - Speed 1 → maps to 2 → 24/2 = 12 frames (slow)
+    /// - Speed 2 → maps to 3 → 24/3 = 8 frames (medium)  
+    /// - Other  → maps to 6 → 24/6 = 4 frames (fast)
+    ///
+    /// At ~60 FPS: 12 frames ≈ 0.2s, 8 frames ≈ 0.13s, 4 frames ≈ 0.067s
+    pub fn projectile_frame_count(&self) -> Option<u8> {
+        match self.projectile_speed {
+            0 => None, // Instant, no projectile
+            1 => Some(12),
+            2 => Some(8),
+            _ => Some(4),
+        }
+    }
+
+    /// Returns projectile travel duration in seconds (assuming 60 FPS)
+    pub fn projectile_duration_secs(&self) -> Option<f32> {
+        self.projectile_frame_count()
+            .map(|frames| frames as f32 / 60.0)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
