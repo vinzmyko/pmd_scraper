@@ -22,8 +22,8 @@ use crate::{
         WanType,
     },
     move_effects_index::{
-        AnimationDetails, AnimationSequence, EffectDefinition, MoveData, MoveEffectTrigger,
-        MoveEffectsIndex, ReuseEffect, ScreenEffect, SpriteEffect,
+        AnimationDetails, AnimationSequence, EffectDefinition, EffectLayer, MoveData,
+        MoveEffectTrigger, MoveEffectsIndex, ReuseEffect, ScreenEffect, SpriteEffect,
     },
     progress::write_progress,
     rom::Rom,
@@ -113,6 +113,8 @@ impl<'a> EffectAssetPipeline<'a> {
                     }))
                 }
                 AnimType::Screen => {
+                    // TODO: Type 5 screen effects use file_index + 268 (0x10C) for actual file lookup
+                    // See EFFECT_ANIMATION_INFO Findings.md for details
                     effects_skipped += 1;
                     Some(EffectDefinition::Screen(ScreenEffect {
                         effect_name: format!("ScreenEffect_{}", effect_id),
@@ -176,6 +178,7 @@ impl<'a> EffectAssetPipeline<'a> {
 
                 let effect_definition = self.build_sprite_effect_definition(
                     wan_file,
+                    effect_info,
                     effect_id,
                     anim_index,
                     frame_width,
@@ -198,15 +201,21 @@ impl<'a> EffectAssetPipeline<'a> {
     fn build_sprite_effect_definition(
         &self,
         wan_file: &WanFile,
+        effect_info: &EffectAnimationInfo,
         effect_id: u16,
         animation_index: usize,
         frame_width: u32,
         frame_height: u32,
     ) -> EffectDefinition {
-        let direction_count = wan_file.max_sequences_per_group.min(8) as u8;
-        let is_directional = wan_file.max_sequences_per_group >= 8;
+        // Per ROM findings: effects are NEVER directional for sprite selection
+        // Direction only affects projectile velocity, not which animation plays
+        let is_directional = false;
+        let direction_count = 1u8;
         let animation_sequence = match &wan_file.animations {
-            AnimationStructure::Effect(anims) => anims.get(animation_index),
+            AnimationStructure::Effect(groups) => {
+                // ROM uses group 0 only, animation_index is the sequence index
+                groups.first().and_then(|group| group.get(animation_index))
+            }
             AnimationStructure::Character(_) => None,
         };
         let animation_sequence = match animation_sequence {
@@ -219,6 +228,7 @@ impl<'a> EffectAssetPipeline<'a> {
                     animations: HashMap::new(),
                     is_directional,
                     direction_count,
+                    is_non_blocking: effect_info.is_non_blocking,
                 });
             }
         };
@@ -260,7 +270,7 @@ impl<'a> EffectAssetPipeline<'a> {
         animations.insert(
             "play".to_string(),
             AnimationSequence {
-                looping: false, // TODO: This should come from effect_info.loop_flag
+                looping: effect_info.loop_flag,
                 details: animation_details,
             },
         );
@@ -272,6 +282,7 @@ impl<'a> EffectAssetPipeline<'a> {
             animations,
             is_directional,
             direction_count,
+            is_non_blocking: effect_info.is_non_blocking,
         })
     }
 
@@ -288,17 +299,19 @@ impl<'a> EffectAssetPipeline<'a> {
             let move_info = &moves_map[move_id];
             let mut move_effects = Vec::new();
 
-            let effect_ids = [
-                move_info.effect_id_1,
-                move_info.effect_id_2,
-                move_info.effect_id_3,
-                move_info.effect_id_4,
+            // Effect layers with their purposes from ROM findings
+            let effect_layers = [
+                (move_info.effect_id_1, EffectLayer::Charge),
+                (move_info.effect_id_2, EffectLayer::Secondary),
+                (move_info.effect_id_3, EffectLayer::Primary),
+                (move_info.effect_id_4, EffectLayer::Projectile),
             ];
 
-            for &effect_id in &effect_ids {
+            for (effect_id, layer) in effect_layers {
                 if effect_id > 0 && index.effects.contains_key(&effect_id.to_string()) {
                     move_effects.push(MoveEffectTrigger {
                         id: effect_id.to_string(),
+                        layer,
                         trigger: "OnExecute".to_string(),
                     });
                 }
