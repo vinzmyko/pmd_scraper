@@ -38,6 +38,8 @@ pub struct SpriteEffect {
     pub animations: HashMap<String, AnimationSequence>,
     pub is_directional: bool,
     pub direction_count: u8,
+    /// If true, game continues without waiting for animation to complete
+    pub is_non_blocking: bool,
 }
 
 /// Defines a sequence of animation frames
@@ -85,9 +87,23 @@ pub struct MoveData {
     pub effects: Vec<MoveEffectTrigger>,
 }
 
+/// Layer purpose based on ROM reverse engineering findings
+#[derive(Serialize, Debug, Clone, Copy)]
+pub enum EffectLayer {
+    /// Layer 0 (offset 0x00): Charge-up, preparation effects
+    Charge = 0,
+    /// Layer 1 (offset 0x02): Secondary impacts, multi-hit effects
+    Secondary = 1,
+    /// Layer 2 (offset 0x04): Primary visual effect
+    Primary = 2,
+    /// Layer 3 (offset 0x06): Projectile, additional effects
+    Projectile = 3,
+}
+
 /// Describes an effect that is triggered by a move
 #[derive(Serialize, Debug)]
 pub struct MoveEffectTrigger {
-    pub id: String,      // The effect_id to play
-    pub trigger: String, // For now, this is always "OnExecute"
+    pub id: String,
+    pub layer: EffectLayer,
+    pub trigger: String,
 }
