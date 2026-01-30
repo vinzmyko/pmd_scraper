@@ -29,6 +29,8 @@ pub enum EffectDefinition {
 /// Defines a visual effect that is rendered from a sprite sheet
 #[derive(Serialize, Debug)]
 pub struct SpriteEffect {
+    /// Path to sprite sheet. For directional effects, this is the base path
+    /// and actual sheets are at `{base}_dir{0-7}.png`
     #[serde(rename = "sprite_sheet")]
     pub sprite_sheet: String,
     #[serde(rename = "frame_width")]
@@ -36,8 +38,15 @@ pub struct SpriteEffect {
     #[serde(rename = "frame_height")]
     pub frame_height: u32,
     pub animations: HashMap<String, AnimationSequence>,
+    /// True if effect has 8 pre-rotated directional variants (sequence_count % 8 == 0)
+    /// Determined by: wan_file.max_sequences_per_group % 8 == 0
     pub is_directional: bool,
+    /// Number of direction variants (8 for directional, 1 for non-directional)
     pub direction_count: u8,
+    /// Base animation index from effect_animation_info. For directional effects,
+    /// the ROM adds direction (0-7) to this value to select the correct sequence.
+    #[serde(rename = "base_animation_index")]
+    pub base_animation_index: u32,
     /// If true, game continues without waiting for animation to complete
     pub is_non_blocking: bool,
 }

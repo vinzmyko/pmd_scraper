@@ -148,7 +148,31 @@ impl<'a> EffectAssetPipeline<'a> {
         Ok(())
     }
 
-    /// Renders, saves, and builds the definition for a 'WanOther' type effect
+    /// Determines if an effect is directional based on ROM behavior.
+    fn check_directional_effect(
+        &self,
+        wan_file: &WanFile,
+        base_animation_index: usize,
+    ) -> (bool, bool) {
+        let sequence_count = wan_file.max_sequences_per_group as usize;
+
+        // Direction is added to animation_index if sequence_count % 8 == 0
+        let is_directional = sequence_count > 0 && sequence_count % 8 == 0;
+
+        // TODO: Could possibly be a reason why some directional sprite sheets don't change
+        // direction, maybe check if they are the same or not? Or reverse engineer more
+        // Verify all 8 direction sequences exist
+        let can_render_all = if is_directional {
+            base_animation_index + 7 < sequence_count
+        } else {
+            false
+        };
+
+        (is_directional, can_render_all)
+    }
+
+    /// Renders, saves, and builds the definition for a 'WanOther' type effect.
+    /// Handles both directional effects (8 sprite sheets) and non-directional effects (1 sheet).
     fn process_sprite_effect(
         &mut self,
         effect_id: u16,
@@ -156,18 +180,135 @@ impl<'a> EffectAssetPipeline<'a> {
         sprites_dir: &Path,
     ) -> io::Result<Option<EffectDefinition>> {
         let file_index = effect_info.file_index as usize;
-        // Use the animation_index from the JSON file
-        let anim_index = effect_info.animation_index as usize;
+        let base_anim_index = effect_info.animation_index as usize;
 
         // Cache already scanned effect sprites
         self.ensure_effect_wan_cached(file_index)?;
 
         let wan_file = self.wan_cache.get(&file_index).unwrap();
 
-        // Render the sprite sheet in memory
+        // Determine directionality based on ROM behavior
+        let (is_directional, can_render_all_directions) =
+            self.check_directional_effect(wan_file, base_anim_index);
+
+        if is_directional {
+            println!(
+                " -> Directional effect detected (sequence_count={}, base_index={})",
+                wan_file.max_sequences_per_group, base_anim_index
+            );
+        }
+
+        if is_directional && can_render_all_directions {
+            // Render 8 separate sprite sheets, one per direction
+            self.process_directional_effect(
+                effect_id,
+                effect_info,
+                wan_file,
+                base_anim_index,
+                sprites_dir,
+            )
+        } else {
+            // Render single sprite sheet (non-directional or fallback)
+            if is_directional && !can_render_all_directions {
+                println!(
+                    " -> WARNING: Directional effect but base_index {} + 7 >= sequence_count {}. Falling back to single sheet.",
+                    base_anim_index, wan_file.max_sequences_per_group
+                );
+            }
+            self.process_non_directional_effect(
+                effect_id,
+                effect_info,
+                wan_file,
+                base_anim_index,
+                sprites_dir,
+            )
+        }
+    }
+
+    /// Processes a directional effect by rendering 8 separate sprite sheets.
+    fn process_directional_effect(
+        &self,
+        effect_id: u16,
+        effect_info: &EffectAnimationInfo,
+        wan_file: &WanFile,
+        base_anim_index: usize,
+        sprites_dir: &Path,
+    ) -> io::Result<Option<EffectDefinition>> {
+        let mut frame_width = 0u32;
+        let mut frame_height = 0u32;
+        let mut any_rendered = false;
+        let mut first_animation_sequence = None;
+
+        // Render all 8 directions
+        for direction in 0u8..8 {
+            let anim_index = base_anim_index + direction as usize;
+
+            match renderer::render_effect_animation_sheet(wan_file, anim_index) {
+                Ok(Some((sprite_sheet, fw, fh))) => {
+                    // Save with direction suffix: {effect_id}_dir{0-7}.png
+                    let sheet_filename = format!("{}_dir{}.png", effect_id, direction);
+                    let sheet_path = sprites_dir.join(&sheet_filename);
+                    self.save_effect_sprite_png(&sprite_sheet, &sheet_path)?;
+
+                    // Store dimensions from first successful render
+                    if !any_rendered {
+                        frame_width = fw;
+                        frame_height = fh;
+
+                        // Get animation sequence from direction 0 for timing data
+                        first_animation_sequence = match &wan_file.animations {
+                            AnimationStructure::Effect(groups) => groups
+                                .first()
+                                .and_then(|group| group.get(anim_index).cloned()),
+                            AnimationStructure::Character(_) => None,
+                        };
+                    }
+
+                    any_rendered = true;
+                    println!(" -> Direction {}: saved {}", direction, sheet_filename);
+                }
+                Ok(None) => {
+                    println!(" -> Direction {}: empty/no visible pixels", direction);
+                }
+                Err(e) => {
+                    eprintln!(" -> Direction {}: render error: {:?}", direction, e);
+                }
+            }
+        }
+
+        if !any_rendered {
+            println!(" -> WARNING: No directions rendered successfully. Skipping effect.");
+            return Ok(None);
+        }
+
+        // Build effect definition with directional info
+        let effect_definition = self.build_sprite_effect_definition_directional(
+            effect_info,
+            effect_id,
+            base_anim_index,
+            frame_width,
+            frame_height,
+            first_animation_sequence.as_ref(),
+            true,
+            8,
+        );
+
+        println!(" -> SUCCESS: 8 directional sprite sheets saved");
+        Ok(Some(effect_definition))
+    }
+
+    /// Processes a non-directional effect by rendering a single sprite sheet.
+    fn process_non_directional_effect(
+        &self,
+        effect_id: u16,
+        effect_info: &EffectAnimationInfo,
+        wan_file: &WanFile,
+        anim_index: usize,
+        sprites_dir: &Path,
+    ) -> io::Result<Option<EffectDefinition>> {
         match renderer::render_effect_animation_sheet(wan_file, anim_index) {
             Ok(Some((sprite_sheet, frame_width, frame_height))) => {
-                // Save the in memory image buffer to disk
+                // Save single sprite sheet
                 let sheet_filename = format!("{}.png", effect_id);
                 let sheet_path = sprites_dir.join(&sheet_filename);
                 self.save_effect_sprite_png(&sprite_sheet, &sheet_path)?;
@@ -176,14 +317,25 @@ impl<'a> EffectAssetPipeline<'a> {
                     sheet_path.display()
                 );
 
-                let effect_definition = self.build_sprite_effect_definition(
-                    wan_file,
+                // Get animation sequence for timing data
+                let animation_sequence = match &wan_file.animations {
+                    AnimationStructure::Effect(groups) => {
+                        groups.first().and_then(|group| group.get(anim_index))
+                    }
+                    AnimationStructure::Character(_) => None,
+                };
+
+                let effect_definition = self.build_sprite_effect_definition_directional(
                     effect_info,
                     effect_id,
                     anim_index,
                     frame_width,
                     frame_height,
+                    animation_sequence,
+                    false,
+                    1,
                 );
+
                 Ok(Some(effect_definition))
             }
             Ok(None) => {
@@ -197,37 +349,30 @@ impl<'a> EffectAssetPipeline<'a> {
         }
     }
 
-    /// Builds the `SpriteEffect` data structure from a rendered animation
-    fn build_sprite_effect_definition(
+    /// Builds the `SpriteEffect` data structure from a rendered animation.
+    fn build_sprite_effect_definition_directional(
         &self,
-        wan_file: &WanFile,
         effect_info: &EffectAnimationInfo,
         effect_id: u16,
-        animation_index: usize,
+        base_animation_index: usize,
         frame_width: u32,
         frame_height: u32,
+        animation_sequence: Option<&crate::graphics::wan::model::Animation>,
+        is_directional: bool,
+        direction_count: u8,
     ) -> EffectDefinition {
-        // Per ROM findings: effects are NEVER directional for sprite selection
-        // Direction only affects projectile velocity, not which animation plays
-        let is_directional = false;
-        let direction_count = 1u8;
-        let animation_sequence = match &wan_file.animations {
-            AnimationStructure::Effect(groups) => {
-                // ROM uses group 0 only, animation_index is the sequence index
-                groups.first().and_then(|group| group.get(animation_index))
-            }
-            AnimationStructure::Character(_) => None,
-        };
+        // Handle case where animation sequence is missing
         let animation_sequence = match animation_sequence {
             Some(anim) => anim,
             None => {
                 return EffectDefinition::Sprite(SpriteEffect {
                     sprite_sheet: format!("res://effect_sprites/{}.png", effect_id),
-                    frame_width: 1,
-                    frame_height: 1,
+                    frame_width: frame_width.max(1),
+                    frame_height: frame_height.max(1),
                     animations: HashMap::new(),
                     is_directional,
                     direction_count,
+                    base_animation_index: base_animation_index as u32,
                     is_non_blocking: effect_info.is_non_blocking,
                 });
             }
@@ -258,7 +403,7 @@ impl<'a> EffectAssetPipeline<'a> {
         let animation_details = if is_simple {
             AnimationDetails::Simple {
                 frame_count: frame_details.len(),
-                duration: frame_details[0][0],
+                duration: frame_details.get(0).map(|f| f[0]).unwrap_or(0.1),
             }
         } else {
             AnimationDetails::Complex {
@@ -275,13 +420,22 @@ impl<'a> EffectAssetPipeline<'a> {
             },
         );
 
+        // For directional effects, sprite_sheet is the base path without _dir{N} suffix
+        // Client will append _dir{direction}.png based on attacker direction
+        let sprite_sheet_path = if is_directional {
+            format!("res://effect_sprites/{}", effect_id)
+        } else {
+            format!("res://effect_sprites/{}.png", effect_id)
+        };
+
         EffectDefinition::Sprite(SpriteEffect {
-            sprite_sheet: format!("res://effect_sprites/{}.png", effect_id),
+            sprite_sheet: sprite_sheet_path,
             frame_width,
             frame_height,
             animations,
             is_directional,
             direction_count,
+            base_animation_index: base_animation_index as u32,
             is_non_blocking: effect_info.is_non_blocking,
         })
     }
