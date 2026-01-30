@@ -159,8 +159,6 @@ impl<'a> EffectAssetPipeline<'a> {
         // Direction is added to animation_index if sequence_count % 8 == 0
         let is_directional = sequence_count > 0 && sequence_count % 8 == 0;
 
-        // TODO: Could possibly be a reason why some directional sprite sheets don't change
-        // direction, maybe check if they are the same or not? Or reverse engineer more
         // Verify all 8 direction sequences exist
         let can_render_all = if is_directional {
             base_animation_index + 7 < sequence_count
@@ -225,7 +223,61 @@ impl<'a> EffectAssetPipeline<'a> {
         }
     }
 
+    /// Calculates the unified canvas box that encompasses all 8 directional animations.
+    fn calculate_unified_canvas_box(
+        &self,
+        wan_file: &WanFile,
+        base_anim_index: usize,
+    ) -> Option<(i16, i16, i16, i16)> {
+        let mut unified_box: Option<(i16, i16, i16, i16)> = None;
+
+        // Collect bounds from all 8 directions
+        for direction in 0u8..8 {
+            let anim_index = base_anim_index + direction as usize;
+
+            if let Ok(Some(canvas_box)) =
+                renderer::get_effect_animation_canvas_box(wan_file, anim_index)
+            {
+                unified_box = Some(match unified_box {
+                    None => canvas_box,
+                    Some(current) => {
+                        (
+                            current.0.min(canvas_box.0), // min x
+                            current.1.min(canvas_box.1), // min y
+                            current.2.max(canvas_box.2), // max x
+                            current.3.max(canvas_box.3), // max y
+                        )
+                    }
+                });
+            }
+        }
+
+        // If we got a unified box, ensure dimensions are multiples of 8
+        unified_box.map(|b| {
+            let width = b.2 - b.0;
+            let height = b.3 - b.1;
+
+            // Round up to multiples of 8
+            let new_width = ((width + 7) / 8) * 8;
+            let new_height = ((height + 7) / 8) * 8;
+
+            // Center the expanded box
+            let width_diff = new_width - width;
+            let height_diff = new_height - height;
+
+            (
+                b.0 - width_diff / 2,
+                b.1 - height_diff / 2,
+                b.0 - width_diff / 2 + new_width,
+                b.1 - height_diff / 2 + new_height,
+            )
+        })
+    }
+
     /// Processes a directional effect by rendering 8 separate sprite sheets.
+    /// Uses a two-pass approach:
+    /// 1. First pass: Calculate unified canvas dimensions across all 8 directions
+    /// 2. Second pass: Render all directions using those unified dimensions
     fn process_directional_effect(
         &self,
         effect_id: u16,
@@ -234,28 +286,48 @@ impl<'a> EffectAssetPipeline<'a> {
         base_anim_index: usize,
         sprites_dir: &Path,
     ) -> io::Result<Option<EffectDefinition>> {
-        let mut frame_width = 0u32;
-        let mut frame_height = 0u32;
+        // Calculate unified canvas box across all 8 directions
+        let unified_canvas_box = self.calculate_unified_canvas_box(wan_file, base_anim_index);
+
+        let unified_canvas_box = match unified_canvas_box {
+            Some(box_dims) => {
+                let width = box_dims.2 - box_dims.0;
+                let height = box_dims.3 - box_dims.1;
+                println!(
+                    " -> Unified canvas: {}x{} (from box {:?})",
+                    width, height, box_dims
+                );
+                box_dims
+            }
+            None => {
+                println!(" -> WARNING: Could not calculate unified canvas. Skipping effect.");
+                return Ok(None);
+            }
+        };
+
+        let frame_width = (unified_canvas_box.2 - unified_canvas_box.0) as u32;
+        let frame_height = (unified_canvas_box.3 - unified_canvas_box.1) as u32;
+
+        // Render all 8 directions using unified dimensions
         let mut any_rendered = false;
         let mut first_animation_sequence = None;
 
-        // Render all 8 directions
         for direction in 0u8..8 {
             let anim_index = base_anim_index + direction as usize;
 
-            match renderer::render_effect_animation_sheet(wan_file, anim_index) {
-                Ok(Some((sprite_sheet, fw, fh))) => {
+            match renderer::render_effect_animation_sheet_with_canvas(
+                wan_file,
+                anim_index,
+                Some(unified_canvas_box),
+            ) {
+                Ok(Some((sprite_sheet, _fw, _fh))) => {
                     // Save with direction suffix: {effect_id}_dir{0-7}.png
                     let sheet_filename = format!("{}_dir{}.png", effect_id, direction);
                     let sheet_path = sprites_dir.join(&sheet_filename);
                     self.save_effect_sprite_png(&sprite_sheet, &sheet_path)?;
 
-                    // Store dimensions from first successful render
+                    // Get animation sequence from first direction for timing data
                     if !any_rendered {
-                        frame_width = fw;
-                        frame_height = fh;
-
-                        // Get animation sequence from direction 0 for timing data
                         first_animation_sequence = match &wan_file.animations {
                             AnimationStructure::Effect(groups) => groups
                                 .first()
@@ -293,7 +365,10 @@ impl<'a> EffectAssetPipeline<'a> {
             8,
         );
 
-        println!(" -> SUCCESS: 8 directional sprite sheets saved");
+        println!(
+            " -> SUCCESS: 8 directional sprite sheets saved (unified {}x{})",
+            frame_width, frame_height
+        );
         Ok(Some(effect_definition))
     }
 

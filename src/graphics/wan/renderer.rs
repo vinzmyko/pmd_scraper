@@ -62,12 +62,53 @@ pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanEr
     Ok(image)
 }
 
-/// Renders a complete animation sequence to a single horizontal sprite sheet image
-pub fn render_effect_animation_sheet(
+/// Get the canvas box for a specific animation index.
+/// Returns None if the animation doesn't exist or is empty.
+pub fn get_effect_animation_canvas_box(
     wan_file: &WanFile,
     animation_index: usize,
+) -> Result<Option<(i16, i16, i16, i16)>, WanError> {
+    let animation = match &wan_file.animations {
+        AnimationStructure::Effect(groups) => groups.first().and_then(|group| {
+            let clamped_index = if animation_index >= group.len() {
+                0
+            } else {
+                animation_index
+            };
+            group.get(clamped_index)
+        }),
+        AnimationStructure::Character(_) => {
+            return Err(WanError::InvalidDataStructure(
+                "Character animation structure not supported for effect rendering".to_string(),
+            ));
+        }
+    };
+
+    let animation = match animation {
+        Some(anim) => anim,
+        None => return Ok(None),
+    };
+
+    if animation.frames.is_empty() {
+        return Ok(None);
+    }
+
+    let max_bounds = get_animation_bounds(wan_file, animation)?;
+    if max_bounds.2 <= max_bounds.0 || max_bounds.3 <= max_bounds.1 {
+        return Ok(None);
+    }
+
+    Ok(Some(round_up_box(max_bounds)))
+}
+
+/// Renders a complete animation sequence to a single horizontal sprite sheet image.
+/// If `fixed_canvas_box` is provided, uses those dimensions instead of calculating from bounds.
+pub fn render_effect_animation_sheet_with_canvas(
+    wan_file: &WanFile,
+    animation_index: usize,
+    fixed_canvas_box: Option<(i16, i16, i16, i16)>,
 ) -> Result<Option<(RgbaImage, u32, u32)>, WanError> {
-    // Per ROM behavior: animation_index is a sequence index into group 0 ONLY
+    // Animation_index is a sequence index into group 0 ONLY
     let animation = match &wan_file.animations {
         AnimationStructure::Effect(groups) => {
             // ROM always uses group 0, animation_index is the sequence index
@@ -103,15 +144,20 @@ pub fn render_effect_animation_sheet(
         return Ok(None);
     }
 
-    let max_bounds = get_animation_bounds(wan_file, animation)?;
-    if max_bounds.2 <= max_bounds.0 || max_bounds.3 <= max_bounds.1 {
-        return Ok(None);
-    }
+    // Use fixed canvas box if provided, otherwise calculate from this animation's bounds
+    let canvas_box = match fixed_canvas_box {
+        Some(box_dims) => box_dims,
+        None => {
+            let max_bounds = get_animation_bounds(wan_file, animation)?;
+            if max_bounds.2 <= max_bounds.0 || max_bounds.3 <= max_bounds.1 {
+                return Ok(None);
+            }
+            round_up_box(max_bounds)
+        }
+    };
 
-    let canvas_box = round_up_box(max_bounds);
-
-    let frame_width = (canvas_box.2 - canvas_box.0) as u32;
-    let frame_height = (canvas_box.3 - canvas_box.1) as u32;
+    let frame_width = (canvas_box.2 - canvas_box.0).max(1) as u32;
+    let frame_height = (canvas_box.3 - canvas_box.1).max(1) as u32;
 
     let mut rendered_frames = Vec::new();
     for seq_frame in animation.frames.iter() {
@@ -132,6 +178,14 @@ pub fn render_effect_animation_sheet(
     let sprite_sheet = combine_frames_horizontally(&rendered_frames)?;
 
     Ok(Some((sprite_sheet, frame_width, frame_height)))
+}
+
+/// Renders a complete animation sequence to a single horizontal sprite sheet image
+pub fn render_effect_animation_sheet(
+    wan_file: &WanFile,
+    animation_index: usize,
+) -> Result<Option<(RgbaImage, u32, u32)>, WanError> {
+    render_effect_animation_sheet_with_canvas(wan_file, animation_index, None)
 }
 
 /// Calculates the maximum bounding box that encloses every frame in an animation sequence
