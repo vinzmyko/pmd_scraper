@@ -12,6 +12,7 @@ mod rom;
 
 mod containers;
 mod data;
+mod dungeon;
 mod formats;
 mod graphics;
 
