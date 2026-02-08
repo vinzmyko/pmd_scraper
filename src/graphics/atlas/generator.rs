@@ -1,12 +1,12 @@
 //! Atlas image generation and frame preparation.
 //!
-//! Handles layout calculation, frame positioning, deduplication,
-//! and final atlas image creation.
+//! Handles layout calculation, frame positioning using anchor-based system,
+//! deduplication, and final atlas image creation.
 
-use crate::graphics::atlas::analyser::FrameAnalysis;
+use crate::graphics::atlas::analyser::{calculate_anchor_point, FrameAnalysis};
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     hash::{Hash, Hasher},
 };
 
@@ -19,20 +19,23 @@ pub struct AtlasLayout {
     pub frames_per_row: u32,
     pub rows: u32,
     pub frame_size: (u32, u32),
+    /// Anchor point position within each frame cell, entity origin/feet position
+    pub anchor_x: i32,
+    pub anchor_y: i32,
 }
 
 /// Prepares analysed frames for placement into the final atlas grid.
 ///
-/// This involves creating a canvas of the final `frame_width` x `frame_height`
-/// for each frame and positioning the actual sprite content within it,
-/// centred around the standard reference point and adjusted by the
-/// original animation offsets.
+/// Uses anchor-based positioning: each frame's content is positioned so that
+/// the entity origin (feet/ground point) aligns with the anchor point in the cell.
 pub fn prepare_frames(
-    analysis: &mut FrameAnalysis, // Changed to mutable
+    analysis: &mut FrameAnalysis,
     frame_width: u32,
     frame_height: u32,
 ) -> Result<Vec<RgbaImage>, super::AtlasError> {
     let mut prepared_frames = Vec::with_capacity(analysis.total_original_frames);
+
+    let (anchor_x, anchor_y) = calculate_anchor_point(analysis, frame_width, frame_height);
 
     for (_idx, (_anim_id, _dir_idx, _sequence_idx, analysed_frame)) in
         analysis.ordered_frames.iter_mut().enumerate()
@@ -47,15 +50,15 @@ pub fn prepare_frames(
             continue;
         }
 
-        // Position the cropped image so its reference point aligns with the frame reference point
-        let final_pos_x = (frame_width as i32 - content_width as i32) / 2;
-        let final_pos_y = (frame_height as i32 - content_height as i32) / 2;
+        // Position content so entity origin aligns with anchor point
+        let final_pos_x = anchor_x - analysed_frame.entity_origin_x;
+        let final_pos_y = anchor_y - analysed_frame.entity_origin_y;
 
         // Store the calculated position for use in metadata generation
         analysed_frame.final_placement_x = final_pos_x;
         analysed_frame.final_placement_y = final_pos_y;
 
-        // Overlay the  content image onto the canvas using the corrected position
+        // Overlay the content image onto the canvas using anchor-based position
         overlay_image(
             &mut final_frame_canvas,
             &analysed_frame.image,
@@ -70,17 +73,23 @@ pub fn prepare_frames(
 }
 
 /// Creates an atlas layout grid based on the number of frames and frame size.
+/// Includes anchor point information for the client.
 pub fn create_atlas_layout(
+    analysis: &FrameAnalysis,
     total_unique_frames: usize,
     frame_width: u32,
     frame_height: u32,
 ) -> AtlasLayout {
+    let (anchor_x, anchor_y) = calculate_anchor_point(analysis, frame_width, frame_height);
+
     if total_unique_frames == 0 {
         return AtlasLayout {
             dimensions: (frame_width.max(8), frame_height.max(8)),
             frames_per_row: 1,
             rows: 1,
             frame_size: (frame_width, frame_height),
+            anchor_x,
+            anchor_y,
         };
     }
 
@@ -97,6 +106,8 @@ pub fn create_atlas_layout(
         frames_per_row,
         rows,
         frame_size: (frame_width, frame_height),
+        anchor_x,
+        anchor_y,
     }
 }
 

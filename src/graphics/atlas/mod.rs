@@ -1,7 +1,7 @@
 //! Sprite Atlas Generation
 //!
 //! This module provides functionality for creating sprite atlases from frame collections,
-//! optimising memory usage and rendering performance
+//! optimising memory usage and rendering performance.
 
 use std::{
     collections::HashMap,
@@ -103,7 +103,8 @@ impl std::fmt::Display for AtlasError {
 /// Creates a sprite atlas and associated metadata for a Pokemon
 ///
 /// This function orchestrates the analysis, layout, generation, and metadata creation
-/// based on the provided WAN files and configuration.
+/// based on the provided WAN files and configuration. Uses anchor-based positioning
+/// where all frames share a common anchor point representing the entity's feet/ground position.
 pub fn create_pokemon_atlas(
     wan_files: &HashMap<String, WanFile>,
     pokemon_id: usize, // monster.md
@@ -112,16 +113,6 @@ pub fn create_pokemon_atlas(
     output_dir: &Path,
     folder_name: &str,
 ) -> Result<AtlasResult, AtlasError> {
-    // --- DIAGNOSTIC START ---
-    let problem_ids: std::collections::HashSet<u16> = [
-        162, 195, 208, 215, 217, 226, 229, 230, 26, 50, 51, 487, 486, 419, 386, 352, 480, 483,
-    ]
-    .iter()
-    .cloned()
-    .collect();
-    let is_problematic = problem_ids.contains(&dex_num);
-    // --- DIAGNOSTIC END ---
-
     if wan_files.is_empty() {
         return Err(AtlasError::NoWanFilesProvided);
     }
@@ -135,7 +126,7 @@ pub fn create_pokemon_atlas(
         pokemon_id, dex_num
     );
     let mut frame_analysis = analyser::analyse_frames(wan_files, dex_num)?;
-    analyser::establish_canonical_reference(&mut frame_analysis);
+
     if frame_analysis.ordered_frames.is_empty() {
         return Err(AtlasError::NoFramesFound);
     }
@@ -143,15 +134,30 @@ pub fn create_pokemon_atlas(
         "  Analysis complete: {} original frames found.",
         frame_analysis.total_original_frames
     );
+    println!(
+        "  Entity extents - Left: {}, Right: {}, Up: {}, Down: {}",
+        frame_analysis.max_extent_left,
+        frame_analysis.max_extent_right,
+        frame_analysis.max_extent_up,
+        frame_analysis.max_extent_down
+    );
 
-    // Calculate Optimal Frame Size
+    // Calculate Optimal Frame Size (now based on entity origin extents)
     let (frame_width, frame_height) = analyser::calculate_optimal_size(&frame_analysis, config);
     println!(
         "  Optimal frame size calculated: {}x{}",
         frame_width, frame_height
     );
 
-    // Prepare Frames for Atlas
+    // Calculate anchor point for logging
+    let (anchor_x, anchor_y) =
+        analyser::calculate_anchor_point(&frame_analysis, frame_width, frame_height);
+    println!(
+        "  Anchor point (entity origin): ({}, {})",
+        anchor_x, anchor_y
+    );
+
+    // Prepare Frames for Atlas (now uses anchor-based positioning)
     let prepared_frames =
         generator::prepare_frames(&mut frame_analysis, frame_width, frame_height)?;
     println!("  Prepared {} frames for atlas.", prepared_frames.len());
@@ -171,46 +177,13 @@ pub fn create_pokemon_atlas(
         )
     };
 
-    // --- CRITICAL DIAGNOSTIC BLOCK ---
-    if is_problematic {
-        println!(
-            "[DIAGNOSTIC] === Atlas Layout Inputs for Dex #{} ===",
-            dex_num
-        );
-        println!(
-            "  1. Total original frames analyzed: {}",
-            frame_analysis.total_original_frames
-        );
-        println!(
-            "  2. Max content size from analysis: {}x{}",
-            frame_analysis.max_content_size.0, frame_analysis.max_content_size.1
-        );
-        println!(
-            "  3. Calculated optimal frame size (padded & rounded): {}x{}",
-            frame_width, frame_height
-        );
-        println!(
-            "  4. Total unique frames after deduplication: {}",
-            unique_frames.len()
-        );
-    }
-    // --- END CRITICAL DIAGNOSTIC BLOCK ---
-
-    let atlas_layout =
-        generator::create_atlas_layout(unique_frames.len(), frame_width, frame_height);
-
-    // --- CRITICAL DIAGNOSTIC BLOCK 2 ---
-    if is_problematic {
-        println!("[DIAGNOSTIC] === Atlas Layout Results ===");
-        println!("  - Frames per row: {}", atlas_layout.frames_per_row);
-        println!("  - Rows: {}", atlas_layout.rows);
-        println!(
-            "  - Final Atlas Dimensions: {}x{}",
-            atlas_layout.dimensions.0, atlas_layout.dimensions.1
-        );
-        println!("[DIAGNOSTIC] =======================================");
-    }
-    // --- END CRITICAL DIAGNOSTIC BLOCK 2 ---
+    // Create atlas layout (now includes anchor point)
+    let atlas_layout = generator::create_atlas_layout(
+        &frame_analysis,
+        unique_frames.len(),
+        frame_width,
+        frame_height,
+    );
 
     println!(
         "  Atlas layout created: {}x{} grid, {}x{} total pixels.",

@@ -1,7 +1,7 @@
 //! Metadata Generation for Sprite Atlases
 //!
 //! Creates a JSON file describing the atlas layout, animations,
-//! directions, and frame properties.
+//! directions, frame properties, and anchor point for positioning.
 
 use std::{collections::HashMap, fs::File, path::Path};
 
@@ -23,6 +23,10 @@ pub struct AtlasMetadata {
     pub atlas_image: String,
     pub frame_width: u32,
     pub frame_height: u32,
+    /// X coordinate of the entity anchor point (feet/ground position) within each frame cell
+    pub anchor_x: i32,
+    /// Y coordinate of the entity anchor point (feet/ground position) within each frame cell
+    pub anchor_y: i32,
     pub total_frames_in_atlas: u32,
     pub shadow_size: u8,
     pub animations: HashMap<String, AtlasAnimationInfo>,
@@ -54,21 +58,23 @@ pub struct FrameInfo {
     pub sheet_y: u32,
     /// Duration this frame is displayed (in game ticks, typically 1/60th sec).
     pub duration: u16,
-    /// X offset to apply when drawing, relative to the standard reference point (feet).
+    /// X offset to apply when drawing (from WAN SequenceFrame data).
+    /// These are additive animation offsets, NOT positioning offsets.
     pub offset_x: i32,
-    /// Y offset to apply when drawing, relative to the standard reference point (feet).
+    /// Y offset to apply when drawing (from WAN SequenceFrame data).
+    /// These are additive animation offsets, NOT positioning offsets.
     pub offset_y: i32,
-    /// X offset for placing the shadow sprite, relative to the standard reference point.
+    /// X offset for placing the shadow sprite, relative to entity origin.
     pub shadow_offset_x: i32,
-    /// Y offset for placing the shadow sprite, relative to the standard reference point.
+    /// Y offset for placing the shadow sprite, relative to entity origin.
     pub shadow_offset_y: i32,
-    /// Head position relative to the frame cell's top-left (0,0).
+    /// Head position relative to entity origin (0,0).
     pub head_pos: Option<[i32; 2]>,
-    /// Left hand position relative to the frame cell's top-left (0,0).
+    /// Left hand position relative to entity origin (0,0).
     pub lhand_pos: Option<[i32; 2]>,
-    /// Right hand position relative to the frame cell's top-left (0,0).
+    /// Right hand position relative to entity origin (0,0).
     pub rhand_pos: Option<[i32; 2]>,
-    /// Centre position relative to the frame cell's top-left (0,0).
+    /// Centre position relative to entity origin (0,0).
     pub centre_pos: Option<[i32; 2]>,
     pub is_hit_frame: bool,
     /// True if the animation should return to idle after this frame.
@@ -142,34 +148,37 @@ pub fn generate_metadata(
             .body_part_offset_data
             .get(analysed_frame.original_wan_frame_index);
 
-        let original_ref_x = analysed_frame.ref_offset_x;
-        let original_ref_y = analysed_frame.ref_offset_y;
-
-        let adjust_offset_relative = |orig_offset: Option<(i16, i16)>| -> Option<[i32; 2]> {
-            orig_offset.map(|(ox, oy)| [ox as i32 - original_ref_x, oy as i32 - original_ref_y])
+        // Body part offsets are in WAN coordinates (relative to entity origin)
+        let convert_offset = |orig_offset: Option<(i16, i16)>| -> Option<[i32; 2]> {
+            orig_offset.map(|(ox, oy)| [ox as i32, oy as i32])
         };
 
-        let head_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.head));
-        let lhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.lhand));
-        let rhand_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.rhand));
-        let centre_pos_rel = adjust_offset_relative(frame_offset_data.map(|fod| fod.centre));
+        let head_pos = convert_offset(frame_offset_data.map(|fod| fod.head));
+        let lhand_pos = convert_offset(frame_offset_data.map(|fod| fod.lhand));
+        let rhand_pos = convert_offset(frame_offset_data.map(|fod| fod.rhand));
+        let centre_pos = convert_offset(frame_offset_data.map(|fod| fod.centre));
+
+        // Shadow offset is relative to entity origin
+        let shadow_offset_x = analysed_frame.original_shadow_x as i32;
+        let shadow_offset_y = analysed_frame.original_shadow_y as i32;
 
         let frame_info = FrameInfo {
             idx: unique_atlas_index_u32,
             sheet_x,
             sheet_y,
             duration: original_seq_frame.duration,
+            // These are the additive animation offsets from the SequenceFrame
             offset_x: original_seq_frame.offset.0 as i32,
             offset_y: original_seq_frame.offset.1 as i32,
-            shadow_offset_x: analysed_frame.original_shadow_x as i32 - original_ref_x,
-            shadow_offset_y: analysed_frame.original_shadow_y as i32 - original_ref_y,
+            shadow_offset_x,
+            shadow_offset_y,
             is_hit_frame: original_seq_frame.is_hit_point(),
             is_return_frame: original_seq_frame.is_return_point(),
             is_rush_frame: original_seq_frame.is_rush_point(),
-            head_pos: head_pos_rel,
-            lhand_pos: lhand_pos_rel,
-            rhand_pos: rhand_pos_rel,
-            centre_pos: centre_pos_rel,
+            head_pos,
+            lhand_pos,
+            rhand_pos,
+            centre_pos,
         };
 
         let anim_output_info = output_animations
@@ -209,6 +218,8 @@ pub fn generate_metadata(
         atlas_image: format!("{:03}_atlas.png", analysis.dex_num),
         frame_width,
         frame_height,
+        anchor_x: layout.anchor_x,
+        anchor_y: layout.anchor_y,
         total_frames_in_atlas: total_unique_frames as u32,
         shadow_size,
         animations: output_animations,
