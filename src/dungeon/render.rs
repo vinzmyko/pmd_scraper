@@ -1,95 +1,264 @@
-//! # Dungeon Tileset Visualisation
+//! # Dungeon Tileset Rendering
 //!
-//! Converts the parsed dungeon data structures (DMA, DPC, DPCI, DPL, DPLA) into
-//! usable assets for external applications.
-//!
-//! ## Responsibilities
-//! - Rasterisation: Decodes 4bpp tile indices and maps them to RGB colours.
-//! - Composition: Assembles 3x3 hardware tiles into 24x24 chunks.
-//! - Export: Generates indexed PNG spritesheets and JSON metadata.
+//! Converts parsed dungeon data into an organised 8×6×3 tileset image.
 
+use std::collections::BTreeMap;
 use std::{fs, io, path::Path};
 
 use image::{Rgba, RgbaImage};
 use serde::Serialize;
 
-use super::{dma::DmaType, dpc::DPC_TILES_PER_CHUNK, dpci::DPCI_TILE_DIM, DungeonTileset};
+use super::dma::DmaType;
+use super::dpci::DPCI_TILE_DIM;
+use super::dpla::DplaColourEntry;
+use super::DungeonTileset;
 
-const CHUNK_PX: usize = DPCI_TILE_DIM * 3; // 24
-const SHEET_COLS: usize = 16;
+const N: u8 = 16;
+const S: u8 = 1;
+const E: u8 = 4;
+const W: u8 = 64;
+const NE: u8 = 8;
+const NW: u8 = 32;
+const SE: u8 = 2;
+const SW: u8 = 128;
+const ALL: u8 = N | S | E | W | NE | NW | SE | SW;
+
+const CHUNK_PX: usize = DPCI_TILE_DIM * 3;
+const COLS_PER_TERRAIN: usize = 8;
+const ROWS_PER_TERRAIN: usize = 6;
+const NUM_TERRAINS: usize = 3;
+const FRAME_WIDTH: usize = COLS_PER_TERRAIN * NUM_TERRAINS * CHUNK_PX;
+const FRAME_HEIGHT: usize = ROWS_PER_TERRAIN * CHUNK_PX;
+
+const TERRAINS: [(DmaType, &str); NUM_TERRAINS] = [
+    (DmaType::Wall, "wall"),
+    (DmaType::Secondary, "secondary"),
+    (DmaType::Floor, "floor"),
+];
+
+/// 48 tile configs in 8×6 grid. -1 = empty cell.
+const TILE_LAYOUT: [(&str, i16); 48] = [
+    // Row 0: Inner corners
+    ("full", ALL as i16),
+    ("inner_SE", (ALL ^ SE) as i16),
+    ("inner_SW", (ALL ^ SW) as i16),
+    ("inner_SE_SW", (ALL ^ SE ^ SW) as i16),
+    ("inner_NE", (ALL ^ NE) as i16),
+    ("inner_NE_SE", (ALL ^ NE ^ SE) as i16),
+    ("inner_NE_SW", (ALL ^ NE ^ SW) as i16),
+    ("inner_NE_SE_SW", (ALL ^ NE ^ SE ^ SW) as i16),
+    // Row 1: Inner corners (NW combos)
+    ("inner_NW", (ALL ^ NW) as i16),
+    ("inner_NW_SE", (ALL ^ NW ^ SE) as i16),
+    ("inner_NW_SW", (ALL ^ NW ^ SW) as i16),
+    ("inner_NW_SE_SW", (ALL ^ NW ^ SE ^ SW) as i16),
+    ("inner_NE_NW", (ALL ^ NE ^ NW) as i16),
+    ("inner_NE_NW_SE", (ALL ^ NE ^ NW ^ SE) as i16),
+    ("inner_NE_NW_SW", (ALL ^ NE ^ NW ^ SW) as i16),
+    ("inner_all_4", (N | S | E | W) as i16),
+    // Row 2: N/S edges with inner corner variants
+    ("edge_N", (S | E | W | SE | SW) as i16),
+    ("edge_N_inner_SE", (S | E | W | SW) as i16),
+    ("edge_N_inner_SW", (S | E | W | SE) as i16),
+    ("edge_N_inner_both", (S | E | W) as i16),
+    ("edge_S", (N | E | W | NE | NW) as i16),
+    ("edge_S_inner_NE", (N | E | W | NW) as i16),
+    ("edge_S_inner_NW", (N | E | W | NE) as i16),
+    ("edge_S_inner_both", (N | E | W) as i16),
+    // Row 3: E/W edges with inner corner variants
+    ("edge_E", (N | S | W | NW | SW) as i16),
+    ("edge_E_inner_NW", (N | S | W | SW) as i16),
+    ("edge_E_inner_SW", (N | S | W | NW) as i16),
+    ("edge_E_inner_both", (N | S | W) as i16),
+    ("edge_W", (N | S | E | NE | SE) as i16),
+    ("edge_W_inner_NE", (N | S | E | SE) as i16),
+    ("edge_W_inner_SE", (N | S | E | NE) as i16),
+    ("edge_W_inner_both", (N | S | E) as i16),
+    // Row 4: Outer corners, corridors, T-junctions
+    ("corner_NW", (S | E | SE) as i16),
+    ("corner_NE", (S | W | SW) as i16),
+    ("corner_SW", (N | E | NE) as i16),
+    ("corner_SE", (N | W | NW) as i16),
+    ("corridor_NS", (N | S) as i16),
+    ("corridor_EW", (E | W) as i16),
+    ("T_north", (S | E | W) as i16),
+    ("T_south", (N | E | W) as i16),
+    // Row 5: T-junctions, end caps, isolated
+    ("T_east", (N | S | E) as i16),
+    ("T_west", (N | S | W) as i16),
+    ("end_N", N as i16),
+    ("end_S", S as i16),
+    ("end_E", E as i16),
+    ("end_W", W as i16),
+    ("isolated", 0),
+    ("_empty", -1),
+];
 
 #[derive(Serialize)]
 pub struct TilesetMetadata {
     pub tileset_id: usize,
-    pub chunk_count: usize,
-    pub sheet_width: usize,
-    pub sheet_height: usize,
-    pub chunk_size: usize,
-    pub dma_rules: DmaRules,
-    pub palettes: Vec<Vec<[u8; 3]>>,
-    pub animation: Option<AnimationMetadata>,
-}
-
-/// 256 neighbor configs × 3 variations per tile type
-#[derive(Serialize)]
-pub struct DmaRules {
-    pub wall: Vec<[u8; 3]>,
-    pub secondary: Vec<[u8; 3]>,
-    pub floor: Vec<[u8; 3]>,
+    pub animated: bool,
+    pub palette_10_frames: usize,
+    pub palette_11_frames: usize,
+    pub durations_palette_10: Vec<u16>,
+    pub durations_palette_11: Vec<u16>,
 }
 
 #[derive(Serialize)]
-pub struct AnimationMetadata {
-    pub palette_10: Vec<ColourAnimation>,
-    pub palette_11: Vec<ColourAnimation>,
+struct LayoutJson {
+    chunk_size: usize,
+    frame_width: usize,
+    frame_height: usize,
+    columns_per_terrain: usize,
+    rows_per_terrain: usize,
+    terrains: Vec<String>,
+    neighbour_bits: BTreeMap<String, u8>,
+    tiles: Vec<LayoutTile>,
 }
 
 #[derive(Serialize)]
-pub struct ColourAnimation {
-    pub colour_index: usize,
-    pub duration_frames: u16,
-    pub frames: Vec<[u8; 3]>,
+struct LayoutTile {
+    name: String,
+    index: usize,
+    col: usize,
+    row: usize,
+    neighbour_bits: u8,
 }
 
-pub fn render_tileset(tileset: &DungeonTileset, output_dir: &Path) -> Result<(), io::Error> {
-    fs::create_dir_all(output_dir)?;
+pub fn render_tileset(
+    tileset: &DungeonTileset,
+    output_dir: &Path,
+) -> Result<TilesetMetadata, io::Error> {
+    let name = format!("tileset_{:03}", tileset.tileset_id);
 
-    let sheet = render_chunk_sheet(tileset);
+    let sheet = render_organised_sheet(tileset);
     sheet
-        .save(output_dir.join("chunks.png"))
+        .save(output_dir.join(format!("{}.png", name)))
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    let metadata = build_metadata(tileset, sheet.width() as usize, sheet.height() as usize);
-    let json = serde_json::to_string_pretty(&metadata)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    fs::write(output_dir.join("tileset.json"), json)?;
+    let (pal10_frames, pal11_frames) = animation_frame_counts(tileset);
+    let animated = pal10_frames > 0 || pal11_frames > 0;
 
+    if animated {
+        let pal_tex = create_palette_texture(tileset, pal10_frames, pal11_frames);
+        pal_tex
+            .save(output_dir.join(format!("{}.pal.png", name)))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    }
+
+    Ok(TilesetMetadata {
+        tileset_id: tileset.tileset_id,
+        animated,
+        palette_10_frames: pal10_frames,
+        palette_11_frames: pal11_frames,
+        durations_palette_10: tileset.dpla.colours[0..16]
+            .iter()
+            .map(|c| c.duration)
+            .collect(),
+        durations_palette_11: tileset.dpla.colours[16..32]
+            .iter()
+            .map(|c| c.duration)
+            .collect(),
+    })
+}
+
+pub fn write_layout_json(output_dir: &Path) -> Result<(), io::Error> {
+    let mut neighbour_bits = BTreeMap::new();
+    for (name, val) in [
+        ("N", N),
+        ("S", S),
+        ("E", E),
+        ("W", W),
+        ("NE", NE),
+        ("NW", NW),
+        ("SE", SE),
+        ("SW", SW),
+    ] {
+        neighbour_bits.insert(name.into(), val);
+    }
+
+    let tiles: Vec<LayoutTile> = TILE_LAYOUT
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, bits))| *bits >= 0)
+        .map(|(i, (name, bits))| LayoutTile {
+            name: name.to_string(),
+            index: i,
+            col: i % COLS_PER_TERRAIN,
+            row: i / COLS_PER_TERRAIN,
+            neighbour_bits: *bits as u8,
+        })
+        .collect();
+
+    let layout = LayoutJson {
+        chunk_size: CHUNK_PX,
+        frame_width: FRAME_WIDTH,
+        frame_height: FRAME_HEIGHT,
+        columns_per_terrain: COLS_PER_TERRAIN,
+        rows_per_terrain: ROWS_PER_TERRAIN,
+        terrains: TERRAINS.iter().map(|(_, name)| name.to_string()).collect(),
+        neighbour_bits,
+        tiles,
+    };
+
+    let json = serde_json::to_string_pretty(&layout)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    fs::write(output_dir.join("layout.json"), json)?;
     Ok(())
 }
 
-fn render_chunk_sheet(tileset: &DungeonTileset) -> RgbaImage {
-    let count = tileset.dpc.chunks.len();
-    let rows = (count + SHEET_COLS - 1) / SHEET_COLS;
-    let mut img = RgbaImage::new((SHEET_COLS * CHUNK_PX) as u32, (rows * CHUNK_PX) as u32);
+pub fn write_tilesets_json(
+    metadata: &[TilesetMetadata],
+    output_dir: &Path,
+) -> Result<(), io::Error> {
+    let json = serde_json::to_string_pretty(metadata)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    fs::write(output_dir.join("tilesets.json"), json)?;
+    Ok(())
+}
 
-    for (idx, chunk) in tileset.dpc.chunks.iter().enumerate() {
-        let bx = (idx % SHEET_COLS) * CHUNK_PX;
-        let by = (idx / SHEET_COLS) * CHUNK_PX;
-        render_chunk(&mut img, tileset, chunk, bx, by);
+fn render_organised_sheet(tileset: &DungeonTileset) -> RgbaImage {
+    let mut img = RgbaImage::new(FRAME_WIDTH as u32, FRAME_HEIGHT as u32);
+
+    for (t_idx, (terrain_type, _)) in TERRAINS.iter().enumerate() {
+        let x_offset = t_idx * COLS_PER_TERRAIN * CHUNK_PX;
+
+        for (i, (_, neighbour_bits)) in TILE_LAYOUT.iter().enumerate() {
+            if *neighbour_bits < 0 {
+                continue;
+            }
+            let col = i % COLS_PER_TERRAIN;
+            let row = i / COLS_PER_TERRAIN;
+            let chunk_id = tileset.dma.get(*terrain_type, *neighbour_bits as u8)[0] as usize;
+
+            render_chunk_at(
+                &mut img,
+                tileset,
+                chunk_id,
+                x_offset + col * CHUNK_PX,
+                row * CHUNK_PX,
+            );
+        }
     }
+
     img
 }
 
-fn render_chunk(
+fn render_chunk_at(
     img: &mut RgbaImage,
     tileset: &DungeonTileset,
-    chunk: &[super::dpc::TileMapping; DPC_TILES_PER_CHUNK],
-    base_x: usize,
-    base_y: usize,
+    chunk_id: usize,
+    bx: usize,
+    by: usize,
 ) {
+    if chunk_id >= tileset.dpc.chunks.len() {
+        return;
+    }
+    let chunk = &tileset.dpc.chunks[chunk_id];
+
     for (i, mapping) in chunk.iter().enumerate() {
-        let tx = base_x + (i % 3) * DPCI_TILE_DIM;
-        let ty = base_y + (i / 3) * DPCI_TILE_DIM;
+        let tx = bx + (i % 3) * DPCI_TILE_DIM;
+        let ty = by + (i / 3) * DPCI_TILE_DIM;
 
         let ti = mapping.tile_index as usize;
         if ti >= tileset.dpci.tiles.len() {
@@ -126,63 +295,80 @@ fn render_chunk(
     }
 }
 
-fn build_metadata(tileset: &DungeonTileset, sw: usize, sh: usize) -> TilesetMetadata {
-    TilesetMetadata {
-        tileset_id: tileset.tileset_id,
-        chunk_count: tileset.dpc.chunks.len(),
-        sheet_width: sw,
-        sheet_height: sh,
-        chunk_size: CHUNK_PX,
-        dma_rules: build_dma_rules(tileset),
-        palettes: build_palette_list(tileset),
-        animation: build_animation_meta(tileset),
+fn create_palette_texture(
+    tileset: &DungeonTileset,
+    pal10_frames: usize,
+    pal11_frames: usize,
+) -> RgbaImage {
+    let base_rows = 12usize;
+    let height = base_rows + pal10_frames + pal11_frames;
+    let mut img = RgbaImage::new(16, height as u32);
+
+    for (pal_idx, pal) in tileset.dpl.palettes.iter().enumerate() {
+        for (ci, col) in pal.iter().enumerate() {
+            img.put_pixel(ci as u32, pal_idx as u32, Rgba([col.r, col.g, col.b, 255]));
+        }
+    }
+
+    write_animation_rows(
+        &mut img,
+        &tileset.dpla.colours[0..16],
+        base_rows,
+        pal10_frames,
+    );
+    write_animation_rows(
+        &mut img,
+        &tileset.dpla.colours[16..32],
+        base_rows + pal10_frames,
+        pal11_frames,
+    );
+
+    img
+}
+
+fn write_animation_rows(
+    img: &mut RgbaImage,
+    entries: &[DplaColourEntry],
+    start_row: usize,
+    num_frames: usize,
+) {
+    for frame in 0..num_frames {
+        for (ci, entry) in entries.iter().enumerate() {
+            let rgb = if frame < entry.frames.len() {
+                &entry.frames[frame]
+            } else if let Some(last) = entry.frames.last() {
+                last
+            } else {
+                continue;
+            };
+            img.put_pixel(
+                ci as u32,
+                (start_row + frame) as u32,
+                Rgba([rgb.r, rgb.g, rgb.b, 255]),
+            );
+        }
     }
 }
 
-fn build_dma_rules(tileset: &DungeonTileset) -> DmaRules {
-    let extract =
-        |t: DmaType| -> Vec<[u8; 3]> { (0..=255u8).map(|n| tileset.dma.get(t, n)).collect() };
-    DmaRules {
-        wall: extract(DmaType::Wall),
-        secondary: extract(DmaType::Secondary),
-        floor: extract(DmaType::Floor),
-    }
+fn animation_frame_counts(tileset: &DungeonTileset) -> (usize, usize) {
+    let pal10 = detect_real_animation(&tileset.dpla.colours[0..16]);
+    let pal11 = detect_real_animation(&tileset.dpla.colours[16..32]);
+    (pal10, pal11)
 }
 
-fn build_palette_list(tileset: &DungeonTileset) -> Vec<Vec<[u8; 3]>> {
-    tileset
-        .dpl
-        .palettes
+fn detect_real_animation(entries: &[DplaColourEntry]) -> usize {
+    let max_frames = entries
         .iter()
-        .map(|pal| pal.iter().map(|c| [c.r, c.g, c.b]).collect())
-        .collect()
-}
-
-fn build_animation_meta(tileset: &DungeonTileset) -> Option<AnimationMetadata> {
-    let has_10 = tileset.dpla.has_animation_for_palette(10);
-    let has_11 = tileset.dpla.has_animation_for_palette(11);
-    if !has_10 && !has_11 {
-        return None;
+        .map(|c| c.num_frames as usize)
+        .max()
+        .unwrap_or(0);
+    if max_frames <= 1 {
+        return 0;
     }
-
-    let extract_pal = |base: usize| -> Vec<ColourAnimation> {
-        (0..16)
-            .filter_map(|i| {
-                let entry = &tileset.dpla.colours[base + i];
-                if entry.num_frames == 0 {
-                    return None;
-                }
-                Some(ColourAnimation {
-                    colour_index: i,
-                    duration_frames: entry.duration,
-                    frames: entry.frames.iter().map(|c| [c.r, c.g, c.b]).collect(),
-                })
-            })
-            .collect()
-    };
-
-    Some(AnimationMetadata {
-        palette_10: extract_pal(0),
-        palette_11: extract_pal(16),
-    })
+    for entry in entries {
+        if entry.frames.len() >= 2 && entry.frames[0] != entry.frames[1] {
+            return max_frames;
+        }
+    }
+    0
 }

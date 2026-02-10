@@ -10,7 +10,7 @@ use crate::binary_utils::read_u8;
 pub const DPL_PAL_COUNT: usize = 12;
 pub const DPL_COLOURS_PER_PAL: usize = 16;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,

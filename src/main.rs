@@ -1,6 +1,7 @@
 mod animation_info_extractor;
 mod arm9;
 mod binary_utils;
+mod dungeon_bin_extractor;
 mod effect_sprite_extractor;
 mod filesystem;
 mod move_data_extractor;
@@ -20,12 +21,11 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use clap::Parser;
 
-use crate::progress::write_progress;
-
 use {
-    animation_info_extractor::AnimationInfoExtractor, effect_sprite_extractor::EffectAssetPipeline,
-    move_data_extractor::MoveDataExtractor, pokemon_portrait_extractor::PortraitExtractor,
-    pokemon_sprite_extractor::PokemonSpriteExtractor, rom::Rom,
+    animation_info_extractor::AnimationInfoExtractor, dungeon_bin_extractor::DungeonBinExtractor,
+    effect_sprite_extractor::EffectAssetPipeline, move_data_extractor::MoveDataExtractor,
+    pokemon_portrait_extractor::PortraitExtractor,
+    pokemon_sprite_extractor::PokemonSpriteExtractor, progress::write_progress, rom::Rom,
 };
 
 #[derive(Parser, Debug)]
@@ -129,6 +129,16 @@ fn main() {
                 &output_dir_pipeline,
                 &cli.progress,
                 EFFECT_SPRITE_NUM,
+            );
+
+            let output_dir_dungeons = output_dir_pipeline.join("DUNGEON").join("tilesets");
+            write_progress(&cli.progress, 0, 170, "dungeon_tileset", "running");
+            let dungeon_extractor = DungeonBinExtractor::new(&rom);
+            let _ = dungeon_extractor.extract_dungeon_tilesets(
+                //Some(vec![1]), // Beach Cave only for testing
+                None, // Beach Cave only for testing
+                &output_dir_dungeons,
+                &cli.progress,
             );
 
             write_progress(&cli.progress, 0, 0, "", "complete");
