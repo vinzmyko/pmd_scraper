@@ -93,6 +93,14 @@ impl<'a> DungeonBinExtractor<'a> {
         }
         write_progress(progress_path, 1, 2, "dungeon_extras", "running");
 
+        // Water ripple extraction
+        let ripple_output_dir = output_dir.parent().unwrap().join("ripples");
+        println!("Extracting water ripples...");
+        if let Err(e) = dungeon::ripples::extract_ripples(&binpack, &ripple_output_dir) {
+            eprintln!("  -> Error extracting ripples: {}", e);
+        }
+        write_progress(progress_path, 2, 2, "dungeon_extras", "running");
+
         Ok(())
     }
 }

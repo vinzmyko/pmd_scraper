@@ -1,5 +1,5 @@
 pub mod dungeon_names;
-
+pub mod ripples;
 pub mod shadows;
 pub mod tileset;
 
