@@ -18,6 +18,7 @@ pub mod dpc;
 pub mod dpci;
 pub mod dpl;
 pub mod dpla;
+pub mod dungeon_names;
 pub mod render;
 
 use std::io;

@@ -61,7 +61,7 @@ impl<'a> DungeonBinExtractor<'a> {
                 Ok(tileset) => match render::render_tileset(&tileset, output_dir) {
                     Ok(meta) => {
                         let status = if meta.animated { "animated" } else { "static" };
-                        println!("  -> tileset_{:03}.png ({})", tileset_id, status);
+                        println!("  -> {} ({})", meta.filename, status);
                         all_metadata.push(meta);
                     }
                     Err(e) => eprintln!("  -> Error rendering tileset {}: {}", tileset_id, e),

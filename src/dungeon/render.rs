@@ -97,6 +97,7 @@ const TILE_LAYOUT: [(&str, i16); 48] = [
 #[derive(Serialize)]
 pub struct TilesetMetadata {
     pub tileset_id: usize,
+    pub filename: String,
     pub animated: bool,
     pub palette_10_frames: usize,
     pub palette_11_frames: usize,
@@ -129,7 +130,8 @@ pub fn render_tileset(
     tileset: &DungeonTileset,
     output_dir: &Path,
 ) -> Result<TilesetMetadata, io::Error> {
-    let name = format!("tileset_{:03}", tileset.tileset_id);
+    let dungeon_name = super::dungeon_names::tileset_name(tileset.tileset_id);
+    let name = format!("{:03}_{}", tileset.tileset_id, dungeon_name);
 
     let sheet = render_organised_sheet(tileset);
     sheet
@@ -148,6 +150,7 @@ pub fn render_tileset(
 
     Ok(TilesetMetadata {
         tileset_id: tileset.tileset_id,
+        filename: format!("{}.png", name),
         animated,
         palette_10_frames: pal10_frames,
         palette_11_frames: pal11_frames,
