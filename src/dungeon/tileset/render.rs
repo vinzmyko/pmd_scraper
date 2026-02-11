@@ -2,16 +2,12 @@
 //!
 //! Converts parsed dungeon data into an organised 8×6×3 tileset image.
 
-use std::collections::BTreeMap;
-use std::{fs, io, path::Path};
+use std::{collections::BTreeMap, fs, io, path::Path};
 
 use image::{Rgba, RgbaImage};
 use serde::Serialize;
 
-use super::dma::DmaType;
-use super::dpci::DPCI_TILE_DIM;
-use super::dpla::DplaColourEntry;
-use super::DungeonTileset;
+use super::{dma::DmaType, dpci::DPCI_TILE_DIM, dpla::DplaColourEntry, DungeonTileset};
 
 const N: u8 = 16;
 const S: u8 = 1;
@@ -130,7 +126,7 @@ pub fn render_tileset(
     tileset: &DungeonTileset,
     output_dir: &Path,
 ) -> Result<TilesetMetadata, io::Error> {
-    let dungeon_name = super::dungeon_names::tileset_name(tileset.tileset_id);
+    let dungeon_name = crate::dungeon::dungeon_names::tileset_name(tileset.tileset_id);
     let name = format!("{:03}_{}", tileset.tileset_id, dungeon_name);
 
     let sheet = render_organised_sheet(tileset);

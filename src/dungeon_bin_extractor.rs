@@ -2,7 +2,7 @@ use std::{fs, io, path::Path};
 
 use crate::{
     containers::binpack::BinPack,
-    dungeon::{self, render},
+    dungeon::tileset::{self, render},
     progress::write_progress,
     rom::Rom,
 };
@@ -57,7 +57,7 @@ impl<'a> DungeonBinExtractor<'a> {
         for (i, &tileset_id) in ids.iter().enumerate() {
             println!("Extracting tileset {}...", tileset_id);
 
-            match dungeon::extract_tileset(&binpack, tileset_id) {
+            match tileset::extract_tileset(&binpack, tileset_id) {
                 Ok(tileset) => match render::render_tileset(&tileset, output_dir) {
                     Ok(meta) => {
                         let status = if meta.animated { "animated" } else { "static" };
