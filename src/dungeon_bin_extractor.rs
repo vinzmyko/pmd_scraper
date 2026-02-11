@@ -2,11 +2,13 @@ use std::{fs, io, path::Path};
 
 use crate::{
     containers::binpack::BinPack,
-    dungeon::tileset::{self, render},
+    dungeon::{
+        self,
+        tileset::{self, render},
+    },
     progress::write_progress,
     rom::Rom,
 };
-
 const MAX_TILESET_ID: usize = 170;
 
 pub struct DungeonBinExtractor<'a> {
@@ -81,6 +83,15 @@ impl<'a> DungeonBinExtractor<'a> {
         }
 
         render::write_tilesets_json(&all_metadata, output_dir)?;
+
+        // Shadow extraction
+        let shadow_output_dir = output_dir.parent().unwrap().join("shadows");
+        write_progress(progress_path, 0, 2, "dungeon_extras", "running");
+        println!("Extracting shadows...");
+        if let Err(e) = dungeon::shadows::extract_shadows(&binpack, &shadow_output_dir) {
+            eprintln!("  -> Error extracting shadows: {}", e);
+        }
+        write_progress(progress_path, 1, 2, "dungeon_extras", "running");
 
         Ok(())
     }
