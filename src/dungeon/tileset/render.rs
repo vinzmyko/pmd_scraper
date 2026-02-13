@@ -20,21 +20,21 @@ const SW: u8 = 128;
 const ALL: u8 = N | S | E | W | NE | NW | SE | SW;
 
 const CHUNK_PX: usize = DPCI_TILE_DIM * 3;
-const COLS_PER_TERRAIN: usize = 8;
-const ROWS_PER_TERRAIN: usize = 6;
-const NUM_TERRAINS: usize = 3;
+const COLS_PER_TILE_TYPE: usize = 8;
+const ROWS_PER_TILE_TYPE: usize = 6;
+const NUM_TILE_TYPES: usize = 3;
 
-const TERRAINS: [(DmaType, &str); NUM_TERRAINS] = [
+const TILE_TYPES: [(DmaType, &str); NUM_TILE_TYPES] = [
     (DmaType::Wall, "wall"),
     (DmaType::Secondary, "secondary"),
     (DmaType::Floor, "floor"),
 ];
 
 const NUM_VARIANTS: usize = 3; // ROM has 3 variations per tile
-const VARIANT_BLOCK_WIDTH: usize = COLS_PER_TERRAIN * CHUNK_PX;
-const TERRAIN_SET_WIDTH: usize = VARIANT_BLOCK_WIDTH * NUM_VARIANTS;
-const FRAME_WIDTH: usize = TERRAIN_SET_WIDTH * NUM_TERRAINS;
-const FRAME_HEIGHT: usize = ROWS_PER_TERRAIN * CHUNK_PX;
+const VARIANT_BLOCK_WIDTH: usize = COLS_PER_TILE_TYPE * CHUNK_PX;
+const TILE_TYPE_SET_WIDTH: usize = VARIANT_BLOCK_WIDTH * NUM_VARIANTS;
+const FRAME_WIDTH: usize = TILE_TYPE_SET_WIDTH * NUM_TILE_TYPES;
+const FRAME_HEIGHT: usize = ROWS_PER_TILE_TYPE * CHUNK_PX;
 
 /// 48 tile configs in 8×6 grid. -1 = empty cell.
 const TILE_LAYOUT: [(&str, i16); 48] = [
@@ -110,12 +110,12 @@ struct LayoutJson {
     chunk_size: usize,
     frame_width: usize,
     frame_height: usize,
-    columns_per_terrain: usize,
-    rows_per_terrain: usize,
+    columns_per_tile_type: usize,
+    rows_per_tile_type: usize,
     num_variants: usize,
     x_offset_per_variant: usize,
-    x_offset_per_terrain: usize,
-    terrains: Vec<String>,
+    x_offset_per_tile_type: usize,
+    tile_types: Vec<String>,
     neighbour_bits: BTreeMap<String, u8>,
     tiles: Vec<LayoutTile>,
 }
@@ -190,8 +190,8 @@ pub fn write_layout_json(output_dir: &Path) -> Result<(), io::Error> {
         .map(|(i, (name, bits))| LayoutTile {
             name: name.to_string(),
             index: i,
-            col: i % COLS_PER_TERRAIN,
-            row: i / COLS_PER_TERRAIN,
+            col: i % COLS_PER_TILE_TYPE,
+            row: i / COLS_PER_TILE_TYPE,
             neighbour_bits: *bits as u8,
         })
         .collect();
@@ -200,12 +200,12 @@ pub fn write_layout_json(output_dir: &Path) -> Result<(), io::Error> {
         chunk_size: CHUNK_PX,
         frame_width: FRAME_WIDTH,
         frame_height: FRAME_HEIGHT,
-        columns_per_terrain: COLS_PER_TERRAIN,
-        rows_per_terrain: ROWS_PER_TERRAIN,
+        columns_per_tile_type: COLS_PER_TILE_TYPE,
+        rows_per_tile_type: ROWS_PER_TILE_TYPE,
         num_variants: NUM_VARIANTS,
         x_offset_per_variant: VARIANT_BLOCK_WIDTH,
-        x_offset_per_terrain: TERRAIN_SET_WIDTH,
-        terrains: TERRAINS.iter().map(|(_, name)| name.to_string()).collect(),
+        x_offset_per_tile_type: TILE_TYPE_SET_WIDTH,
+        tile_types: TILE_TYPES.iter().map(|(_, name)| name.to_string()).collect(),
         neighbour_bits,
         tiles,
     };
@@ -229,10 +229,10 @@ pub fn write_tilesets_json(
 fn render_organised_sheet(tileset: &DungeonTileset) -> RgbaImage {
     let mut img = RgbaImage::new(FRAME_WIDTH as u32, FRAME_HEIGHT as u32);
 
-    // Iterate through Terrains
-    for (t_idx, (terrain_type, _)) in TERRAINS.iter().enumerate() {
-        // Calculate where this Terrain's section begins in the image
-        let terrain_base_x = t_idx * TERRAIN_SET_WIDTH;
+    // Iterate through TileTypes
+    for (t_idx, (tile_type, _)) in TILE_TYPES.iter().enumerate() {
+        // Calculate where this TileType's section begins in the image
+        let tile_type_base_x = t_idx * TILE_TYPE_SET_WIDTH;
 
         // Iterate through the 3 Variants
         for v_idx in 0..NUM_VARIANTS {
@@ -245,18 +245,18 @@ fn render_organised_sheet(tileset: &DungeonTileset) -> RgbaImage {
                     continue;
                 }
 
-                let col = i % COLS_PER_TERRAIN;
-                let row = i / COLS_PER_TERRAIN;
+                let col = i % COLS_PER_TILE_TYPE;
+                let row = i / COLS_PER_TILE_TYPE;
 
                 // Get the specific variant ID
-                let chunk_mappings = tileset.dma.get(*terrain_type, *neighbour_bits as u8);
+                let chunk_mappings = tileset.dma.get(*tile_type, *neighbour_bits as u8);
                 let chunk_id = chunk_mappings[v_idx] as usize;
 
                 render_chunk_at(
                     &mut img,
                     tileset,
                     chunk_id,
-                    terrain_base_x + variant_offset_x + (col * CHUNK_PX),
+                    tile_type_base_x + variant_offset_x + (col * CHUNK_PX),
                     row * CHUNK_PX,
                 );
             }
