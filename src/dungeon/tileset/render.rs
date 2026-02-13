@@ -23,14 +23,18 @@ const CHUNK_PX: usize = DPCI_TILE_DIM * 3;
 const COLS_PER_TERRAIN: usize = 8;
 const ROWS_PER_TERRAIN: usize = 6;
 const NUM_TERRAINS: usize = 3;
-const FRAME_WIDTH: usize = COLS_PER_TERRAIN * NUM_TERRAINS * CHUNK_PX;
-const FRAME_HEIGHT: usize = ROWS_PER_TERRAIN * CHUNK_PX;
 
 const TERRAINS: [(DmaType, &str); NUM_TERRAINS] = [
     (DmaType::Wall, "wall"),
     (DmaType::Secondary, "secondary"),
     (DmaType::Floor, "floor"),
 ];
+
+const NUM_VARIANTS: usize = 3; // ROM has 3 variations per tile
+const VARIANT_BLOCK_WIDTH: usize = COLS_PER_TERRAIN * CHUNK_PX;
+const TERRAIN_SET_WIDTH: usize = VARIANT_BLOCK_WIDTH * NUM_VARIANTS;
+const FRAME_WIDTH: usize = TERRAIN_SET_WIDTH * NUM_TERRAINS;
+const FRAME_HEIGHT: usize = ROWS_PER_TERRAIN * CHUNK_PX;
 
 /// 48 tile configs in 8×6 grid. -1 = empty cell.
 const TILE_LAYOUT: [(&str, i16); 48] = [
@@ -108,6 +112,9 @@ struct LayoutJson {
     frame_height: usize,
     columns_per_terrain: usize,
     rows_per_terrain: usize,
+    num_variants: usize,
+    x_offset_per_variant: usize,
+    x_offset_per_terrain: usize,
     terrains: Vec<String>,
     neighbour_bits: BTreeMap<String, u8>,
     tiles: Vec<LayoutTile>,
@@ -195,6 +202,9 @@ pub fn write_layout_json(output_dir: &Path) -> Result<(), io::Error> {
         frame_height: FRAME_HEIGHT,
         columns_per_terrain: COLS_PER_TERRAIN,
         rows_per_terrain: ROWS_PER_TERRAIN,
+        num_variants: NUM_VARIANTS,
+        x_offset_per_variant: VARIANT_BLOCK_WIDTH,
+        x_offset_per_terrain: TERRAIN_SET_WIDTH,
         terrains: TERRAINS.iter().map(|(_, name)| name.to_string()).collect(),
         neighbour_bits,
         tiles,
@@ -219,24 +229,37 @@ pub fn write_tilesets_json(
 fn render_organised_sheet(tileset: &DungeonTileset) -> RgbaImage {
     let mut img = RgbaImage::new(FRAME_WIDTH as u32, FRAME_HEIGHT as u32);
 
+    // Iterate through Terrains
     for (t_idx, (terrain_type, _)) in TERRAINS.iter().enumerate() {
-        let x_offset = t_idx * COLS_PER_TERRAIN * CHUNK_PX;
+        // Calculate where this Terrain's section begins in the image
+        let terrain_base_x = t_idx * TERRAIN_SET_WIDTH;
 
-        for (i, (_, neighbour_bits)) in TILE_LAYOUT.iter().enumerate() {
-            if *neighbour_bits < 0 {
-                continue;
+        // Iterate through the 3 Variants
+        for v_idx in 0..NUM_VARIANTS {
+            // Calculate where this specific Variant block begins
+            let variant_offset_x = v_idx * VARIANT_BLOCK_WIDTH;
+
+            // Iterate through the 47 layout tiles
+            for (i, (_, neighbour_bits)) in TILE_LAYOUT.iter().enumerate() {
+                if *neighbour_bits < 0 {
+                    continue;
+                }
+
+                let col = i % COLS_PER_TERRAIN;
+                let row = i / COLS_PER_TERRAIN;
+
+                // Get the specific variant ID
+                let chunk_mappings = tileset.dma.get(*terrain_type, *neighbour_bits as u8);
+                let chunk_id = chunk_mappings[v_idx] as usize;
+
+                render_chunk_at(
+                    &mut img,
+                    tileset,
+                    chunk_id,
+                    terrain_base_x + variant_offset_x + (col * CHUNK_PX),
+                    row * CHUNK_PX,
+                );
             }
-            let col = i % COLS_PER_TERRAIN;
-            let row = i / COLS_PER_TERRAIN;
-            let chunk_id = tileset.dma.get(*terrain_type, *neighbour_bits as u8)[0] as usize;
-
-            render_chunk_at(
-                &mut img,
-                tileset,
-                chunk_id,
-                x_offset + col * CHUNK_PX,
-                row * CHUNK_PX,
-            );
         }
     }
 
