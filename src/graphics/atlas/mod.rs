@@ -109,6 +109,7 @@ pub fn create_pokemon_atlas(
     wan_files: &HashMap<String, WanFile>,
     pokemon_id: usize, // monster.md
     dex_num: u16,
+    monster_shadow_size: u8,
     config: &AtlasConfig,
     output_dir: &Path,
     folder_name: &str,
@@ -197,7 +198,6 @@ pub fn create_pokemon_atlas(
     let atlas_image = generator::generate_atlas(&unique_frames, &atlas_layout)?;
 
     println!("  Generating metadata...");
-    let shadow_size = get_shadow_size(wan_files);
     let metadata = metadata::generate_metadata(
         wan_files,
         &frame_analysis,
@@ -205,7 +205,7 @@ pub fn create_pokemon_atlas(
         frame_height,
         &atlas_layout,
         &frame_mapping,
-        shadow_size,
+        monster_shadow_size,
     )?;
 
     // Save Results
@@ -296,12 +296,4 @@ pub fn save_indexed_atlas(
     }
 
     Ok(())
-}
-
-fn get_shadow_size(wan_files: &HashMap<String, WanFile>) -> u8 {
-    wan_files
-        .values()
-        .next()
-        .map(|wan| wan.sdw_size)
-        .unwrap_or(1)
 }

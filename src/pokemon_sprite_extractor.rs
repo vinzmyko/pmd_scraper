@@ -550,7 +550,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
             body_part_offset_data: merged_offsets,
             custom_palette: attack_wan.custom_palette,
             effect_specific_palette: attack_wan.effect_specific_palette,
-            sdw_size: attack_wan.sdw_size,
             wan_type: attack_wan.wan_type,
             palette_offset: attack_wan.palette_offset,
             tile_lookup_8bpp: attack_wan.tile_lookup_8bpp,
@@ -596,12 +595,15 @@ impl<'a> PokemonSpriteExtractor<'a> {
         let mut wan_files = HashMap::new();
         wan_files.insert("merged".to_string(), merged_wan);
 
+        let shadow_size = entry.shadow_size as u8;
+
         println!("Generating sprite atlas for {}...", folder_name);
 
         match create_pokemon_atlas(
             &wan_files,
             id,
             entry.national_pokedex_number,
+            shadow_size,
             context.atlas_config,
             context.output_dir,
             folder_name,

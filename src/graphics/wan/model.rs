@@ -29,7 +29,6 @@ pub struct WanFile {
     pub custom_palette: PaletteList,
     pub effect_specific_palette: Option<PaletteList>,
     pub tile_lookup_8bpp: Option<TileLookup>,
-    pub sdw_size: u8,
     pub wan_type: WanType,
     pub palette_offset: u16,
     pub max_sequences_per_group: u16,
