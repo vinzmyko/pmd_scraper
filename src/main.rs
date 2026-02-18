@@ -96,7 +96,7 @@ fn main() {
 
             // Includes all pokemon, female versions, different forms
             let mut total_pokemon: usize = 572;
-            const EFFECT_SPRITE_NUM: usize = 539;
+            const EFFECT_SPRITE_NUM: usize = 664;
 
             if let Some(num) = cli.num_pokemon {
                 total_pokemon = num as usize;
