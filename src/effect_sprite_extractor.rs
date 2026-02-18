@@ -17,13 +17,13 @@ use crate::{
         wan::{
             model::WanFile,
             parser::{parse_wan_from_sir0_content, parse_wan_palette_only},
-            renderer, AnimationStructure, PaletteList,
+            renderer, AnimationStructure, ImgPiece, PaletteList,
         },
         WanType,
     },
     move_effects_index::{
         AnimationDetails, AnimationSequence, EffectDefinition, EffectLayer, MoveData,
-        MoveEffectTrigger, MoveEffectsIndex, ReuseEffect, ScreenEffect, SpriteEffect,
+        MoveEffectTrigger, MoveEffectsIndex, ScreenEffect, SpriteEffect,
     },
     progress::write_progress,
     rom::Rom,
@@ -35,6 +35,7 @@ pub struct EffectAssetPipeline<'a> {
     wan_cache: HashMap<usize, WanFile>,
     effect_bin: Option<BinPack>,
     base_palette: Option<PaletteList>,
+    base_wan_file292: Option<WanFile>,
 }
 
 impl<'a> EffectAssetPipeline<'a> {
@@ -44,6 +45,7 @@ impl<'a> EffectAssetPipeline<'a> {
             wan_cache: HashMap::new(),
             effect_bin: None,
             base_palette: None,
+            base_wan_file292: None,
         }
     }
 
@@ -82,7 +84,7 @@ impl<'a> EffectAssetPipeline<'a> {
 
             let effect_entry = match anim_type {
                 AnimType::WanOther => {
-                    match self.process_sprite_effect(*effect_id, effect_info, &sprites_dir) {
+                    match self.process_sprite_effect(*effect_id, effect_info, &sprites_dir, None) {
                         Ok(Some(entry)) => {
                             effects_processed += 1;
                             write_progress(
@@ -106,11 +108,54 @@ impl<'a> EffectAssetPipeline<'a> {
                     }
                 }
                 AnimType::WanFile0 => {
-                    effects_skipped += 1;
-                    Some(EffectDefinition::Reuse(ReuseEffect {
-                        target: "Attacker".to_string(),
-                        animation_index: effect_info.animation_index,
-                    }))
+                    match self.process_sprite_effect(*effect_id, effect_info, &sprites_dir, Some(0))
+                    {
+                        Ok(Some(entry)) => {
+                            effects_processed += 1;
+                            write_progress(
+                                progress_path,
+                                effects_processed,
+                                total_effects,
+                                "move_effect_sprites",
+                                "running",
+                            );
+                            Some(entry)
+                        }
+                        Ok(None) => {
+                            effects_skipped += 1;
+                            None
+                        }
+                        Err(e) => {
+                            eprintln!(" -> ERROR processing effect {}: {}", effect_id, e);
+                            errors += 1;
+                            None
+                        }
+                    }
+                }
+                AnimType::WanFile1 => {
+                    match self.process_sprite_effect(*effect_id, effect_info, &sprites_dir, Some(1))
+                    {
+                        Ok(Some(entry)) => {
+                            effects_processed += 1;
+                            write_progress(
+                                progress_path,
+                                effects_processed,
+                                total_effects,
+                                "move_effect_sprites",
+                                "running",
+                            );
+                            Some(entry)
+                        }
+                        Ok(None) => {
+                            effects_skipped += 1;
+                            None
+                        }
+                        Err(e) => {
+                            eprintln!(" -> ERROR processing effect {}: {}", effect_id, e);
+                            errors += 1;
+                            None
+                        }
+                    }
                 }
                 AnimType::Screen => {
                     // TODO: Type 5 screen effects use file_index + 268 (0x10C) for actual file lookup
@@ -176,14 +221,32 @@ impl<'a> EffectAssetPipeline<'a> {
         effect_id: u16,
         effect_info: &EffectAnimationInfo,
         sprites_dir: &Path,
+        override_file_index: Option<usize>,
     ) -> io::Result<Option<EffectDefinition>> {
-        let file_index = effect_info.file_index as usize;
+        let file_index = override_file_index.unwrap_or(effect_info.file_index as usize);
         let base_anim_index = effect_info.animation_index as usize;
 
         // Cache already scanned effect sprites
         self.ensure_effect_wan_cached(file_index)?;
 
-        let wan_file = self.wan_cache.get(&file_index).unwrap();
+        // For shared WAN files (0/1), clone and apply palette_index offset per-effect
+        let wan_file_ref = if override_file_index.is_some() && effect_info.palette_index > 0 {
+            let mut cloned = self.wan_cache.get(&file_index).unwrap().clone();
+            let offset = effect_info.palette_index as u8;
+            let pal_count = cloned.custom_palette.len().max(1) as u8;
+            for frame in &mut cloned.frame_data {
+                for piece in &mut frame.pieces {
+                    piece.palette_index = piece.palette_index.wrapping_add(offset) % pal_count;
+                }
+            }
+            Some(cloned)
+        } else {
+            None
+        };
+
+        let wan_file = wan_file_ref
+            .as_ref()
+            .unwrap_or_else(|| self.wan_cache.get(&file_index).unwrap());
 
         // Determine directionality based on ROM behavior
         let (is_directional, can_render_all_directions) =
@@ -675,6 +738,8 @@ impl<'a> EffectAssetPipeline<'a> {
                 base_palette_index
             );
             let base_palette_data = &effect_bin[base_palette_index];
+
+            // Parse palette-only for the base_palette field (existing behavior)
             match self.parse_wan_from_data(base_palette_data, WanType::Effect, true) {
                 Ok(base_wan) => {
                     self.base_palette = Some(base_wan.custom_palette);
@@ -688,11 +753,121 @@ impl<'a> EffectAssetPipeline<'a> {
                     return Err(e);
                 }
             }
+
+            // Parse fully for WanFile0/1 image data merging
+            match self.parse_wan_from_data(base_palette_data, WanType::Effect, false) {
+                Ok(full_wan) => {
+                    self.base_wan_file292 = Some(full_wan);
+                    println!(" -> Full file 292 WAN parsed for image data.");
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Could not fully parse file 292: {}. WanFile0/1 effects may fail.",
+                        e
+                    );
+                }
+            }
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "effect.bin is too small to contain the base palette.",
             ));
+        }
+
+        // Pre-cache shared WAN files 0 and 1 by merging file 292 images with file 0/1 animations
+        if let Some(ref base_wan) = self.base_wan_file292 {
+            for shared_idx in [0usize, 1] {
+                if shared_idx < effect_bin.len() {
+                    let sprite_data = &effect_bin[shared_idx];
+                    match self.parse_wan_from_data(sprite_data, WanType::Effect, false) {
+                        Ok(anim_wan) => {
+                            // Merge: file 292 provides palette only,
+                            // file 0/1 provides images, frames, and animations
+                            let merged_wan = WanFile {
+                                img_data: {
+                                    // Build VRAM with 128-byte block alignment.
+                                    // Empty chunks occupy one block. Data chunks pad to next boundary.
+                                    let block_size = 128usize;
+                                    let mut padded_vram: Vec<u8> = Vec::new();
+
+                                    for piece in &base_wan.img_data {
+                                        if piece.img_px.is_empty() {
+                                            // Empty chunk still occupies one block
+                                            padded_vram.resize(padded_vram.len() + block_size, 0);
+                                        } else {
+                                            padded_vram.extend_from_slice(&piece.img_px);
+                                            let remainder = padded_vram.len() % block_size;
+                                            if remainder != 0 {
+                                                padded_vram.resize(
+                                                    padded_vram.len() + (block_size - remainder),
+                                                    0,
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    // Tail-slices at 128-byte granularity so multi-tile pieces read forward
+                                    let num_tiles = padded_vram.len() / block_size;
+                                    (0..num_tiles)
+                                        .map(|i| ImgPiece {
+                                            img_px: padded_vram[i * block_size..].to_vec(),
+                                        })
+                                        .collect()
+                                },
+                                frame_data: anim_wan.frame_data,
+                                animations: anim_wan.animations,
+                                body_part_offset_data: anim_wan.body_part_offset_data,
+                                custom_palette: self.base_palette.clone().unwrap_or_default(),
+                                effect_specific_palette: None,
+                                wan_type: WanType::Effect,
+                                palette_offset: 0,
+                                tile_lookup_8bpp: {
+                                    // Identity lookup: tile_num N → img_data[N]
+                                    // Build padded len same way to get correct count
+                                    let block_size = 128usize;
+                                    let mut padded_len = 0usize;
+                                    for piece in &base_wan.img_data {
+                                        if piece.img_px.is_empty() {
+                                            padded_len += block_size;
+                                        } else {
+                                            padded_len += piece.img_px.len();
+                                            let remainder = padded_len % block_size;
+                                            if remainder != 0 {
+                                                padded_len += block_size - remainder;
+                                            }
+                                        }
+                                    }
+                                    let max_tile = padded_len / block_size;
+                                    Some((0..max_tile).map(|i| (i, i)).collect())
+                                },
+                                max_sequences_per_group: anim_wan.max_sequences_per_group,
+                            };
+                            println!(
+                                " -> Shared WAN file {} merged successfully (frames: {}, sequences: {}).",
+                                shared_idx,
+                                merged_wan.frame_data.len(),
+                                merged_wan.max_sequences_per_group
+                            );
+
+                            self.wan_cache.insert(shared_idx, merged_wan);
+
+                            if let Some(cached_wan) = self.wan_cache.get_mut(&shared_idx) {
+                                for frame in &mut cached_wan.frame_data {
+                                    for piece in &mut frame.pieces {
+                                        piece.is_256_colour = true;
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "Warning: Failed to parse shared WAN file {}: {}",
+                                shared_idx, e
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         self.effect_bin = Some(effect_bin);

@@ -22,7 +22,6 @@ impl MoveEffectsIndex {
 #[serde(tag = "type")]
 pub enum EffectDefinition {
     Sprite(SpriteEffect),
-    Reuse(ReuseEffect),
     Screen(ScreenEffect),
 }
 
@@ -73,14 +72,6 @@ pub enum AnimationDetails {
         // Vec of [duration_seconds, offsetX, offsetY]
         frames: Vec<[f32; 3]>,
     },
-}
-
-/// Defines an effect that reuses an existing Pokemon's animation
-#[derive(Serialize, Debug)]
-pub struct ReuseEffect {
-    pub target: String,
-    #[serde(rename = "animation_index")]
-    pub animation_index: u32,
 }
 
 /// Defines a screen-wide visual effect
