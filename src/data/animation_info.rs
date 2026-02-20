@@ -153,7 +153,7 @@ pub struct MoveAnimationInfo {
 
     // Animation parameters
     pub projectile_speed: u32, // 0=instant, 1=slow(12f), 2=medium(8f), other=fast(4f)
-    pub monster_anim_type: u8, // 0-12=standard, 98=multi-directional, 99=spin
+    pub pokemon_anim_id: u8,   // 0-12=standard, 98=multi-directional, 99=spin
     pub attachment_point_idx: i8, // -1 to 3: position offset lookup index
     pub sound_effect_id: u16,  // 0x3F00 (16128) = silence
 
@@ -175,7 +175,7 @@ impl MoveAnimationInfo {
             add_delay: raw.add_delay,
             flag_bit7: raw.flag_bit7,
             projectile_speed: raw.projectile_speed,
-            monster_anim_type: raw.monster_anim_type,
+            pokemon_anim_id: raw.monster_anim_type,
             attachment_point_idx: raw.attachment_point_idx,
             sound_effect_id: raw.sound_effect_id,
             special_animations: specials,
@@ -191,6 +191,7 @@ impl MoveAnimationInfo {
     /// - Other  → maps to 6 → 24/6 = 4 frames (fast)
     ///
     /// At ~60 FPS: 12 frames ≈ 0.2s, 8 frames ≈ 0.13s, 4 frames ≈ 0.067s
+    #[allow(dead_code)]
     pub fn projectile_frame_count(&self) -> Option<u8> {
         match self.projectile_speed {
             0 => None, // Instant, no projectile
@@ -200,7 +201,8 @@ impl MoveAnimationInfo {
         }
     }
 
-    /// Returns projectile travel duration in seconds (assuming 60 FPS)
+    /// Returns projectile travel duration in seconds
+    #[allow(dead_code)]
     pub fn projectile_duration_secs(&self) -> Option<f32> {
         self.projectile_frame_count()
             .map(|frames| frames as f32 / 60.0)
