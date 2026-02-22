@@ -562,7 +562,8 @@ fn read_animation_sequence(cursor: &mut Cursor<&[u8]>, ptr: u32) -> Result<Anima
         }
 
         let _pos = cursor.position();
-        let frame_dur = read_u16_le(cursor)?;
+        let frame_dur = read_u8(cursor)?;
+        let flag = read_u8(cursor)?;
 
         if frame_dur == 0 {
             break;
@@ -576,8 +577,8 @@ fn read_animation_sequence(cursor: &mut Cursor<&[u8]>, ptr: u32) -> Result<Anima
 
         frames.push(SequenceFrame::new(
             frame_index,
-            frame_dur,
-            0,
+            frame_dur as u16,
+            flag,
             (spr_off_x as i16, spr_off_y as i16),
             (0, 0),
         ));
