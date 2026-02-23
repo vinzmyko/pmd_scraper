@@ -12,6 +12,7 @@ use image::{imageops, Rgba, RgbaImage};
 
 // This constant is used by the canvas calculation logic
 const CENTRE_X: i16 = 256;
+const CENTRE_Y: i16 = 512;
 
 /// Extract a single frame from a WAN file
 pub fn extract_frame(wan: &WanFile, frame_idx: usize) -> Result<RgbaImage, WanError> {
@@ -289,13 +290,13 @@ fn round_up_box(bounds: (i16, i16, i16, i16)) -> (i16, i16, i16, i16) {
     }
 
     let width = (CENTRE_X - bounds.0).max(bounds.2 - CENTRE_X) * 2;
-    let height = bounds.3 - bounds.1;
+    let height = (CENTRE_Y - bounds.1).max(bounds.3 - CENTRE_Y) * 2;
 
     let new_width = round_up_to_mult(width, 8);
     let new_height = round_up_to_mult(height, 8);
 
     let start_x = CENTRE_X - new_width / 2;
-    let start_y = bounds.1 + (height - new_height) / 2;
+    let start_y = CENTRE_Y - new_height / 2;
 
     (start_x, start_y, start_x + new_width, start_y + new_height)
 }
