@@ -166,7 +166,7 @@ impl SequenceFrame {
         self.is_rush_point
     }
 
-    pub fn is_hit_point(&self) -> bool {
+    pub fn is_effect_point(&self) -> bool {
         (self.flag & flags::FRAME_HIT_MASK) != 0
     }
 

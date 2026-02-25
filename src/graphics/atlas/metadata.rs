@@ -76,7 +76,8 @@ pub struct FrameInfo {
     pub rhand_pos: Option<[i32; 2]>,
     /// Centre position relative to entity origin (0,0).
     pub centre_pos: Option<[i32; 2]>,
-    pub is_hit_frame: bool,
+    /// True if the primary/secondary effect should play during this frame.
+    pub is_effect_frame: bool,
     /// True if the animation should return to idle after this frame.
     pub is_return_frame: bool,
     /// True if this is a key frame in a charge-up/multi-hit sequence.
@@ -172,7 +173,7 @@ pub fn generate_metadata(
             offset_y: original_seq_frame.offset.1 as i32,
             shadow_offset_x,
             shadow_offset_y,
-            is_hit_frame: original_seq_frame.is_hit_point(),
+            is_effect_frame: original_seq_frame.is_effect_point(),
             is_return_frame: original_seq_frame.is_return_point(),
             is_rush_frame: original_seq_frame.is_rush_point(),
             head_pos,
