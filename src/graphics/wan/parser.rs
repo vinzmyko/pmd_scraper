@@ -405,7 +405,7 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
                             break;
                         }
                         cursor.seek(SeekFrom::Current(6))?;
-                        if ptr_pix_src > 0 && (ptr_pix_src as u64) < data.len() as u64 {
+                        if (ptr_pix_src as u64) < data.len() as u64 && amt > 0 {
                             let current_pos = cursor.position();
                             cursor.seek(SeekFrom::Start(ptr_pix_src as u64))?;
                             let read_size = (amt as usize).min(data.len() - ptr_pix_src as usize);
@@ -437,7 +437,7 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
                             break;
                         }
                         cursor.seek(SeekFrom::Current(6))?;
-                        if ptr_pix_src > 0 && (ptr_pix_src as u64) < data.len() as u64 {
+                        if (ptr_pix_src as u64) < data.len() as u64 && amt > 0 {
                             let current_pos = cursor.position();
                             cursor.seek(SeekFrom::Start(ptr_pix_src as u64))?;
                             let read_size = (amt as usize).min(data.len() - ptr_pix_src as usize);
