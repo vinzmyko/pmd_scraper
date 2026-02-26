@@ -776,7 +776,7 @@ impl<'a> EffectAssetPipeline<'a> {
 
         // Pre-cache shared WAN files 0 and 1 by merging file 292 images with file 0/1 animations
         if let Some(ref base_wan) = self.base_wan_file292 {
-            for shared_idx in [0usize, 1] {
+            for shared_idx in [0usize] {
                 if shared_idx < effect_bin.len() {
                     let sprite_data = &effect_bin[shared_idx];
                     match self.parse_wan_from_data(sprite_data, WanType::Effect, false) {
@@ -792,8 +792,7 @@ impl<'a> EffectAssetPipeline<'a> {
 
                                     for piece in &base_wan.img_data {
                                         if piece.img_px.is_empty() {
-                                            // Empty chunk still occupies one block
-                                            padded_vram.resize(padded_vram.len() + block_size, 0);
+                                            continue;
                                         } else {
                                             padded_vram.extend_from_slice(&piece.img_px);
                                             let remainder = padded_vram.len() % block_size;
@@ -828,7 +827,7 @@ impl<'a> EffectAssetPipeline<'a> {
                                     let mut padded_len = 0usize;
                                     for piece in &base_wan.img_data {
                                         if piece.img_px.is_empty() {
-                                            padded_len += block_size;
+                                            continue;
                                         } else {
                                             padded_len += piece.img_px.len();
                                             let remainder = padded_len % block_size;
