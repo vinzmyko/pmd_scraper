@@ -521,7 +521,8 @@ impl<'a> EffectAssetPipeline<'a> {
             .iter()
             .map(|frame| {
                 let duration_sec = (frame.duration as f32 / 59.8261 * 10000.0).round() / 10000.0;
-                [duration_sec, frame.offset.0 as f32, frame.offset.1 as f32]
+                // zero out the offsets in the JSON since they're now baked into animation sheet
+                [duration_sec, 0.0, 0.0]
             })
             .collect();
 

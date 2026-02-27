@@ -165,7 +165,12 @@ pub fn render_effect_animation_sheet_with_canvas(
         let meta_frame_index = seq_frame.frame_index as usize;
 
         if meta_frame_index < wan_file.frame_data.len() {
-            let frame_image = render_meta_frame_on_canvas(wan_file, meta_frame_index, canvas_box)?;
+            let frame_image = render_meta_frame_on_canvas(
+                wan_file,
+                meta_frame_index,
+                canvas_box,
+                (seq_frame.offset.0, seq_frame.offset.1),
+            )?;
             rendered_frames.push(frame_image);
         } else {
             rendered_frames.push(RgbaImage::new(frame_width, frame_height));
@@ -215,11 +220,13 @@ fn get_animation_bounds(
             let width_px = (width_blocks * TEX_SIZE) as i16;
             let height_px = (height_blocks * TEX_SIZE) as i16;
 
+            let off_x = seq_frame.offset.0;
+            let off_y = seq_frame.offset.1;
             let piece_rect = (
-                piece.x_offset,
-                piece.y_offset,
-                piece.x_offset + width_px,
-                piece.y_offset + height_px,
+                piece.x_offset + off_x,
+                piece.y_offset + off_y,
+                piece.x_offset + width_px + off_x,
+                piece.y_offset + height_px + off_y,
             );
 
             combined_bounds.0 = combined_bounds.0.min(piece_rect.0);
@@ -242,6 +249,7 @@ fn render_meta_frame_on_canvas(
     wan: &WanFile,
     meta_frame_index: usize,
     canvas_box: (i16, i16, i16, i16),
+    offset: (i16, i16),
 ) -> Result<RgbaImage, WanError> {
     let canvas_width = (canvas_box.2 - canvas_box.0).max(1) as u32;
     let canvas_height = (canvas_box.3 - canvas_box.1).max(1) as u32;
@@ -263,8 +271,8 @@ fn render_meta_frame_on_canvas(
 
         let palette = &wan.custom_palette[pal_num];
         let dimensions = piece.get_dimensions();
-        let pos_x = piece.x_offset - canvas_box.0;
-        let pos_y = piece.y_offset - canvas_box.1;
+        let pos_x = piece.x_offset + offset.0 - canvas_box.0;
+        let pos_y = piece.y_offset + offset.1 - canvas_box.1;
 
         render_piece(
             wan,
