@@ -145,9 +145,10 @@ pub fn generate_metadata(
             ))
         })?;
 
-        let frame_offset_data = wan_file
-            .body_part_offset_data
-            .get(analysed_frame.original_wan_frame_index);
+        // The double-push hack inflates meta_frame indices by 1 relative to the
+        // offset table, so subtract 1 to get the correct offset entry
+        let offset_index = analysed_frame.original_wan_frame_index.saturating_sub(1);
+        let frame_offset_data = wan_file.body_part_offset_data.get(offset_index);
 
         // Body part offsets are in WAN coordinates (relative to entity origin)
         let convert_offset = |orig_offset: Option<(i16, i16)>| -> Option<[i32; 2]> {

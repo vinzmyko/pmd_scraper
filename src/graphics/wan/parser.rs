@@ -232,20 +232,22 @@ pub fn parse_character_wan(
     };
 
     // Read meta frames
-    let meta_frames = match read_meta_frames(
+    let (meta_frames, pointer_count) = match read_meta_frames(
         cursor,
         ptr_meta_frames_ref_table as u64,
         ptr_offsets_table as u64,
     ) {
-        Ok(frames) => frames,
+        Ok(result) => result,
         Err(e) => {
             println!("  - Warning: Failed to read meta frames: {:?}", e);
-            Vec::new()
+            (Vec::new(), 0)
         }
     };
 
-    // Read offset data
-    let offset_data = match read_offset_data(cursor, ptr_offsets_table as u64, meta_frames.len()) {
+    // Read offset data (use pointer_count, not meta_frames.len(), because
+    // the double-push hack inflates meta_frames but the ROM offset table
+    // has exactly one entry per pointer)
+    let offset_data = match read_offset_data(cursor, ptr_offsets_table as u64, pointer_count) {
         Ok(offsets) => offsets,
         Err(e) => {
             println!("  - Warning: Failed to read offset data: {:?}", e);
@@ -1036,7 +1038,7 @@ fn read_meta_frames(
     cursor: &mut Cursor<&[u8]>,
     ptr_meta_frames_ref_table: u64,
     ptr_frames_ref_table_end: u64,
-) -> Result<Vec<MetaFrame>, WanError> {
+) -> Result<(Vec<MetaFrame>, usize), WanError> {
     cursor.seek(SeekFrom::Start(ptr_meta_frames_ref_table))?;
     let mut ptrs = Vec::new();
     while cursor.position() < ptr_frames_ref_table_end {
@@ -1105,7 +1107,7 @@ fn read_meta_frames(
         }
         meta_frames.push(MetaFrame { pieces });
     }
-    Ok(meta_frames)
+    Ok((meta_frames, ptrs.len()))
 }
 
 /// Read offset data from the WAN file
