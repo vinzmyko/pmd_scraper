@@ -188,6 +188,7 @@ pub fn parse_character_wan(
             palette_offset: 0,
             tile_lookup_8bpp: None,
             max_sequences_per_group: 0,
+            offset_table_size: 0,
         });
     }
 
@@ -278,6 +279,7 @@ pub fn parse_character_wan(
         palette_offset: 0,
         tile_lookup_8bpp: None,
         max_sequences_per_group: 8,
+        offset_table_size: pointer_count,
     })
 }
 
@@ -532,6 +534,7 @@ fn parse_effect_wan(data: &[u8], ptr_wan: u32) -> Result<WanFile, WanError> {
         palette_offset,
         tile_lookup_8bpp,
         max_sequences_per_group,
+        offset_table_size: 0,
     })
 }
 
@@ -730,6 +733,7 @@ pub fn parse_wan_palette_only(content: &[u8], data_pointer: u32) -> Result<WanFi
         palette_offset: palette_offset_info,
         tile_lookup_8bpp: None,
         max_sequences_per_group: 0,
+        offset_table_size: 0,
     })
 }
 

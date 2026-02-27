@@ -32,6 +32,7 @@ pub struct WanFile {
     pub wan_type: WanType,
     pub palette_offset: u16,
     pub max_sequences_per_group: u16,
+    pub offset_table_size: usize,
 }
 /// A collection of image data strips
 #[derive(Debug, Clone)]

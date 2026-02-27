@@ -841,6 +841,7 @@ impl<'a> EffectAssetPipeline<'a> {
                                     Some((0..max_tile).map(|i| (i, i)).collect())
                                 },
                                 max_sequences_per_group: anim_wan.max_sequences_per_group,
+                                offset_table_size: 0,
                             };
                             println!(
                                 " -> Shared WAN file {} merged successfully (frames: {}, sequences: {}).",

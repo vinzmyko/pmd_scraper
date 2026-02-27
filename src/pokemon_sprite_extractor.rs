@@ -16,7 +16,7 @@ use crate::{
     data::{monster_md::MonsterData, MonsterEntry},
     graphics::{
         atlas::{create_pokemon_atlas, AtlasConfig},
-        wan::{parser, Animation, AnimationStructure, WanFile},
+        wan::{parser, Animation, AnimationStructure, FrameOffset, WanFile},
         WanType,
     },
     progress::write_progress,
@@ -449,7 +449,13 @@ impl<'a> PokemonSpriteExtractor<'a> {
         }
 
         // Merge body_part_offset_data
+        // Pad monster offsets to match inflated frame_data count so attack
+        // offset indices align correctly after the frame_index shift
         let mut merged_offsets = monster_wan.body_part_offset_data.clone();
+        let monster_inflation = monster_wan.frame_data.len() - monster_wan.offset_table_size;
+        for _ in 0..monster_inflation {
+            merged_offsets.push(FrameOffset::new((0, 0), (0, 0), (0, 0), (0, 0)));
+        }
         merged_offsets.extend(attack_wan.body_part_offset_data.clone());
 
         const MAX_STANDARD_ANIMATIONS: usize = 13;
@@ -554,6 +560,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
             palette_offset: attack_wan.palette_offset,
             tile_lookup_8bpp: attack_wan.tile_lookup_8bpp,
             max_sequences_per_group: 8,
+            offset_table_size: 0,
         }
     }
 
