@@ -50,8 +50,25 @@ pub struct MoveData {
     pub base_power: u16,
     pub move_type: u8,
     pub category: u8,
+    pub target_range: u16,
+    pub ai_target_range: u16,
     pub base_pp: u8,
-    pub accuracy: u8,
+    pub ai_weight: u8,
+    pub accuracy1: u8,
+    pub accuracy2: u8,
+    pub ai_condition_random_chance: u8,
+    pub strikes: u8,
+    pub max_ginseng_boost: u8,
+    pub crit_chance: u8,
+    pub reflected_by_magic_coat: bool,
+    pub can_be_snatched: bool,
+    pub fails_while_muzzled: bool,
+    pub ai_can_use_against_frozen: bool,
+    pub usable_while_taunted: bool,
+    pub range_string_idx: u8,
+    pub message_string_idx: u16,
+    // derived
+    pub move_range_distance: u8,
 }
 
 /// Main extractor struct
@@ -276,35 +293,35 @@ impl<'a> MoveDataExtractor<'a> {
 
     /// Parse a single 26-byte move entry
     fn parse_move_entry(&self, cursor: &mut Cursor<&[u8]>, name: String) -> io::Result<MoveData> {
-        // Offset 0x00: Base Power (u16)
-        let base_power = read_u16_le(cursor)?;
+        let base_power = read_u16_le(cursor)?; // 0x00
+        let move_type = read_u8(cursor)?; // 0x02
+        let category = read_u8(cursor)?; // 0x03
+        let target_range = read_u16_le(cursor)?; // 0x04
+        let ai_target_range = read_u16_le(cursor)?; // 0x06
+        let base_pp = read_u8(cursor)?; // 0x08
+        let ai_weight = read_u8(cursor)?; // 0x09
+        let accuracy1 = read_u8(cursor)?; // 0x0A
+        let accuracy2 = read_u8(cursor)?; // 0x0B
+        let ai_condition_random_chance = read_u8(cursor)?; // 0x0C
+        let strikes = read_u8(cursor)?; // 0x0D
+        let max_ginseng_boost = read_u8(cursor)?; // 0x0E
+        let crit_chance = read_u8(cursor)?; // 0x0F
+        let reflected_by_magic_coat = read_u8(cursor)? != 0; // 0x10
+        let can_be_snatched = read_u8(cursor)? != 0; // 0x11
+        let fails_while_muzzled = read_u8(cursor)? != 0; // 0x12
+        let ai_can_use_against_frozen = read_u8(cursor)? != 0; // 0x13
+        let usable_while_taunted = read_u8(cursor)? != 0; // 0x14
+        let range_string_idx = read_u8(cursor)?; // 0x15
+        let move_id = read_u16_le(cursor)?; // 0x16
+        let message_string_idx = read_u16_le(cursor)?; // 0x18
 
-        // Offset 0x02: Type (u8)
-        let move_type = read_u8(cursor)?;
-
-        // Offset 0x03: Category (u8)
-        let category = read_u8(cursor)?;
-
-        // Skip bytes 0x04-0x07 (4 bytes)
-        cursor.set_position(cursor.position() + 4);
-
-        // Offset 0x08: Base PP (u8)
-        let base_pp = read_u8(cursor)?;
-
-        // Skip bytes 0x09-0x0A (2 bytes)
-        cursor.set_position(cursor.position() + 2);
-
-        // Offset 0x0B: Accuracy (u8)
-        let accuracy = read_u8(cursor)?;
-
-        // Skip bytes 0x0C-0x15 (10 bytes)
-        cursor.set_position(cursor.position() + 10);
-
-        // Offset 0x16: Move ID (u16)
-        let move_id = read_u16_le(cursor)?;
-
-        // Skip remaining bytes to complete 26-byte entry
-        cursor.set_position(cursor.position() + 2);
+        let upper_nibble = (target_range as u8) & 0xF0;
+        let move_range_distance = match upper_nibble {
+            0x50 => 10,
+            0x90 => 2,
+            0x80 => 1,
+            _ => 0,
+        };
 
         Ok(MoveData {
             move_id,
@@ -312,8 +329,24 @@ impl<'a> MoveDataExtractor<'a> {
             base_power,
             move_type,
             category,
+            target_range,
+            ai_target_range,
             base_pp,
-            accuracy,
+            ai_weight,
+            accuracy1,
+            accuracy2,
+            ai_condition_random_chance,
+            strikes,
+            max_ginseng_boost,
+            crit_chance,
+            reflected_by_magic_coat,
+            can_be_snatched,
+            fails_while_muzzled,
+            ai_can_use_against_frozen,
+            usable_while_taunted,
+            range_string_idx,
+            message_string_idx,
+            move_range_distance,
         })
     }
 
