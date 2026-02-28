@@ -394,7 +394,9 @@ impl<'a> MoveDataExtractor<'a> {
         let output_path = output_dir.join("move_data.json");
         let file = File::create(&output_path)?;
 
-        serde_json::to_writer_pretty(file, moves)
+        let move_map: HashMap<u16, &MoveData> = moves.iter().map(|m| (m.move_id, m)).collect();
+
+        serde_json::to_writer_pretty(file, &move_map)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         println!("  Saved move data to {}", output_path.display());
