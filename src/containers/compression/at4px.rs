@@ -1,8 +1,8 @@
 use crate::containers::{CompressionContainer, ContainerHandler};
 use std::io::{self};
 
-// At4pxContainer is a specialised compression container used for compressed image data for Pokemon portrait sprites. It uses a bespoke
-// implementation of the PX algorithm to decompress the container into image data.
+// AT4PX is a compression container using the PX algorithm. Used throughout the ROM for various
+// compressed image data including dungeon tilesets (DMA, DPC, DPCI) and portrait sprites.
 
 pub const AT4PX_CONTAINER_HEADER_SIZE: usize = 0x12;
 
@@ -233,10 +233,10 @@ fn compute_nibble_pattern(flag_idx: usize, low_nibble: u8) -> (u8, u8) {
     let mut nibbles = [nibble_base; 4];
 
     match flag_idx {
-        2..=4 => {
+        1..=4 => {
             nibbles[flag_idx - 1] = nibbles[flag_idx - 1].wrapping_sub(1);
         }
-        6..=8 => {
+        5..=8 => {
             nibbles[flag_idx - 5] = nibbles[flag_idx - 5].wrapping_add(1);
         }
         _ => (),
