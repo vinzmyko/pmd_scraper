@@ -114,17 +114,17 @@ pub struct RawMoveAnimationInfo {
     pub effect_id_4: u16, // Offset 0x6: Effect layer 4
 
     // Behavior flags (offset 0x8) - packed into single byte
-    pub animation_category: u8, // Bits 0-2: Animation category (0-7)
-    pub flag_bit3: bool,        // Bit 3: Unknown
-    pub skip_fade_in: bool,     // Bit 4: If true, skip screen fade-in effect
-    pub flag_bit5: bool,        // Bit 5: Unknown
-    pub add_delay: bool,        // Bit 6: If true, add delay after animation
-    pub flag_bit7: bool,        // Bit 7: Unused
+    pub projectile_wave_pattern: u8, // Bits 0-2: Bits 0-2: 0=straight, 1=vertical sine, 2=spiral
+    pub dual_target: bool,           // Bit 3: plays effect on both attacker and target
+    pub skip_fade_in: bool,          // Bit 4: If true, skip screen fade-in effect
+    pub face_direction_with_delay: bool, // Bit 5: resets attacker facing direction + adds pre-animation pause
+    pub add_delay: bool,                 // Bit 6: If true, add delay after animation
+    pub flag_bit7: bool,                 // Bit 7: Unused
 
     // Offset 0x9-0xB: Padding (3 bytes) - unused, for 4-byte alignment
 
     // Animation parameters (offset 0xC onwards)
-    pub projectile_speed: u32, // 0=instant, 1=slow(12f), 2=med(8f), other=fast(4f)
+    pub projectile_speed: u32, // 0=fast(4f), 1=slow(12f), 2=medium(8f), other=fast(4f)
     pub monster_anim_type: u8, // 0-12 (standard), 98 (multi-dir), 99 (spin rotation)
     pub attachment_point_idx: i8, // -1 to 3: position offset lookup index (SIGNED)
     pub sound_effect_id: u16,  // Sound effect ID (0x3F00 = silence)
@@ -144,15 +144,15 @@ pub struct MoveAnimationInfo {
     pub effect_id_4: u16,
 
     // Flags (offset 0x8)
-    pub animation_category: u8, // Bits 0-2: Category (0-7), purpose unknown
-    pub flag_bit3: bool,        // Bit 3: Unknown
-    pub skip_fade_in: bool,     // Bit 4: Skip screen fade-in effect
-    pub flag_bit5: bool,        // Bit 5: Unknown
-    pub add_delay: bool,        // Bit 6: Add post-animation delay
-    pub flag_bit7: bool,        // Bit 7: Unknown/unused
+    pub projectile_wave_pattern: u8, // Bits 0-2: Bits 0-2: 0=straight, 1=vertical sine, 2=spiral
+    pub dual_target: bool,           // Bit 3: plays effect on both attacker and target
+    pub skip_fade_in: bool,          // Bit 4: Skip screen fade-in effect
+    pub face_direction_with_delay: bool, // Bit 5: resets attacker facing direction + adds pre-animation pause
+    pub add_delay: bool,                 // Bit 6: Add post-animation delay
+    pub flag_bit7: bool,                 // Bit 7: Unknown/unused
 
     // Animation parameters
-    pub projectile_speed: u32, // 0=instant, 1=slow(12f), 2=medium(8f), other=fast(4f)
+    pub projectile_speed: u32, // 0=fast(4f), 1=slow(12f), 2=medium(8f), other=fast(4f)
     pub pokemon_anim_id: u8,   // 0-12=standard, 98=multi-directional, 99=spin
     pub attachment_point_idx: i8, // -1 to 3: position offset lookup index
     pub sound_effect_id: u16,  // 0x3F00 (16128) = silence
@@ -168,10 +168,10 @@ impl MoveAnimationInfo {
             effect_id_2: raw.effect_id_2,
             effect_id_3: raw.effect_id_3,
             effect_id_4: raw.effect_id_4,
-            animation_category: raw.animation_category,
-            flag_bit3: raw.flag_bit3,
+            projectile_wave_pattern: raw.projectile_wave_pattern,
+            dual_target: raw.dual_target,
             skip_fade_in: raw.skip_fade_in,
-            flag_bit5: raw.flag_bit5,
+            face_direction_with_delay: raw.face_direction_with_delay,
             add_delay: raw.add_delay,
             flag_bit7: raw.flag_bit7,
             projectile_speed: raw.projectile_speed,
@@ -192,20 +192,18 @@ impl MoveAnimationInfo {
     ///
     /// At ~60 FPS: 12 frames ≈ 0.2s, 8 frames ≈ 0.13s, 4 frames ≈ 0.067s
     #[allow(dead_code)]
-    pub fn projectile_frame_count(&self) -> Option<u8> {
+    pub fn projectile_frame_count(&self) -> u8 {
         match self.projectile_speed {
-            0 => None, // Instant, no projectile
-            1 => Some(12),
-            2 => Some(8),
-            _ => Some(4),
+            1 => 12,
+            2 => 8,
+            _ => 4, // includes 0
         }
     }
 
     /// Returns projectile travel duration in seconds
     #[allow(dead_code)]
-    pub fn projectile_duration_secs(&self) -> Option<f32> {
-        self.projectile_frame_count()
-            .map(|frames| frames as f32 / 60.0)
+    pub fn projectile_duration_secs(&self) -> f32 {
+        self.projectile_frame_count() as f32 / 60.0
     }
 }
 
@@ -381,10 +379,10 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
 
         // Read and parse flags byte
         let flags = binary_utils::read_u32_le(&mut cursor).map_err(|e| e.to_string())?;
-        let animation_category = (flags & 0x7) as u8;
-        let flag_bit3 = (flags & 0x8) != 0;
+        let projectile_wave_pattern = (flags & 0x7) as u8;
+        let dual_target = (flags & 0x8) != 0;
         let skip_fade_in = (flags & 0x10) != 0;
-        let flag_bit5 = (flags & 0x20) != 0;
+        let face_direction_with_delay = (flags & 0x20) != 0;
         let add_delay = (flags & 0x40) != 0;
         let flag_bit7 = (flags & 0x80) != 0;
 
@@ -403,10 +401,10 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
             effect_id_2,
             effect_id_3,
             effect_id_4,
-            animation_category,
-            flag_bit3,
+            projectile_wave_pattern,
+            dual_target,
             skip_fade_in,
-            flag_bit5,
+            face_direction_with_delay,
             add_delay,
             flag_bit7,
             projectile_speed,
@@ -440,7 +438,7 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
 
         let point_value = binary_utils::read_i8(&mut cursor).map_err(|e| e.to_string())?;
 
-        let unk5 = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
+        let is_non_blocking = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
         let loop_flag = binary_utils::read_u8(&mut cursor).map_err(|e| e.to_string())? != 0;
 
         effect_table.push(EffectAnimationInfo {
@@ -452,7 +450,7 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
             timing_offset,
             screen_effect_param,
             attachment_point: point_value,
-            is_non_blocking: unk5,
+            is_non_blocking,
             loop_flag,
         });
     }
