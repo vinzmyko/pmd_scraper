@@ -403,8 +403,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
     }
 
     fn merge_wan_files(&self, monster_wan: WanFile, attack_wan: WanFile) -> WanFile {
-        println!("\n=== Starting WAN merge ===");
-
         // Extract the animation groups
         let monster_groups = match monster_wan.animations {
             AnimationStructure::Character(groups) => groups,
@@ -419,17 +417,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
         // Get counts for adjustment
         let monster_frame_count = monster_wan.frame_data.len();
         let monster_img_count = monster_wan.img_data.len();
-
-        println!(
-            "Frame counts: monster={}, m_attack={}",
-            monster_frame_count,
-            attack_wan.frame_data.len()
-        );
-        println!(
-            "Image data counts: monster={}, m_attack={}",
-            monster_img_count,
-            attack_wan.img_data.len()
-        );
 
         // Merge img_data
         let mut merged_img_data = monster_wan.img_data.clone();
@@ -530,24 +517,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
                 }
             }
         }
-
-        // Log final stats
-        let non_empty_count = merged_groups
-            .iter()
-            .filter(|group| !group.is_empty())
-            .count();
-
-        let total_animations: usize = merged_groups.iter().map(|group| group.len()).sum();
-
-        println!(
-            "Merged {} animation groups with {} total directional animations",
-            non_empty_count, total_animations
-        );
-        println!(
-            "Total merged: {} frames, {} img_data entries",
-            merged_frame_data.len(),
-            merged_img_data.len()
-        );
 
         WanFile {
             img_data: merged_img_data,
