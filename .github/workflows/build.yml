@@ -1,0 +1,102 @@
+name: Build Scraper Binaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools mingw-w64
+
+      - name: Build Linux (static musl)
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Build Windows
+        run: cargo build --release --target x86_64-pc-windows-gnu
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: pmd_scraper-linux
+          path: target/x86_64-unknown-linux-musl/release/pmd_scraper
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: pmd_scraper-windows
+          path: target/x86_64-pc-windows-gnu/release/pmd_scraper.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin, aarch64-apple-darwin
+
+      - name: Build Intel
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Build Apple Silicon
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            target/x86_64-apple-darwin/release/pmd_scraper \
+            target/aarch64-apple-darwin/release/pmd_scraper \
+            -output pmd_scraper_macos
+
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: pmd_scraper-macos
+          path: pmd_scraper_macos
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-linux-windows, build-macos]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+
+      - name: Delete existing latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release delete latest --yes || true
+
+      - name: Delete latest tag
+        run: |
+          git push origin :refs/tags/latest || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create latest \
+            --title "Latest Build" \
+            --notes "Automatically built from main branch" \
+            --latest \
+            pmd_scraper-linux/pmd_scraper \
+            pmd_scraper-windows/pmd_scraper.exe \
+            pmd_scraper-macos/pmd_scraper_macos
