@@ -10,6 +10,7 @@ mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
 mod progress;
 mod rom;
+mod status_icon_extractor;
 
 mod containers;
 mod data;
@@ -20,6 +21,8 @@ mod graphics;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use clap::Parser;
+
+use crate::status_icon_extractor::StatusIconExtractor;
 
 use {
     animation_info_extractor::AnimationInfoExtractor, dungeon_bin_extractor::DungeonBinExtractor,
@@ -135,11 +138,17 @@ fn main() {
             write_progress(&cli.progress, 0, 170, "dungeon_tileset", "running");
             let dungeon_extractor = DungeonBinExtractor::new(&rom);
             let _ = dungeon_extractor.extract_dungeon_tilesets(
-                //Some(vec![1]), // Beach Cave only for testing
-                None, // Beach Cave only for testing
+                None,
                 &output_dir_dungeons,
                 &cli.progress,
             );
+
+            let output_dir_status_icons = output_dir_pipeline.join("STATUS_ICONS");
+            write_progress(&cli.progress, 0, 33, "status_icons", "running");
+            let mut status_icon_extractor = StatusIconExtractor::new(&mut rom);
+            if let Err(e) = status_icon_extractor.extract(&output_dir_status_icons, &cli.progress) {
+                eprintln!("Failed to extract status icons: {}", e);
+            }
 
             write_progress(&cli.progress, 0, 0, "", "complete");
         }
