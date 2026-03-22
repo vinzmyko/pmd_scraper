@@ -42,33 +42,128 @@ use crate::{
     rom::Rom,
 };
 
+fn move_type_str(value: u8) -> String {
+    match value {
+        0 => "None",
+        1 => "Normal",
+        2 => "Fire",
+        3 => "Water",
+        4 => "Grass",
+        5 => "Electric",
+        6 => "Ice",
+        7 => "Fighting",
+        8 => "Poison",
+        9 => "Ground",
+        10 => "Flying",
+        11 => "Psychic",
+        12 => "Bug",
+        13 => "Rock",
+        14 => "Ghost",
+        15 => "Dragon",
+        16 => "Dark",
+        17 => "Steel",
+        18 => "Neutral",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+fn move_category_str(value: u8) -> String {
+    match value {
+        0 => "Physical",
+        1 => "Special",
+        2 => "Status",
+        3 => "None",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+fn move_target_str(value: u8) -> String {
+    match value {
+        0 => "Enemies",
+        1 => "Party (including user)",
+        2 => "All (including user)",
+        3 => "User",
+        4 => "Enemies (after charging)",
+        5 => "All (except user)",
+        6 => "Teammates (excluding user)",
+        15 => "Special (unique targeting, e.g. Spikes, Curse)",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+fn move_range_str(value: u8) -> String {
+    match value {
+        0 => "Front (1 tile)",
+        1 => "Front_and_Sides (cuts corners)",
+        2 => "Nearby (8 surrounding tiles)",
+        3 => "Room",
+        4 => "Front_2 (2 tiles, cuts corners, AI unaware)",
+        5 => "Front_10 (10 tiles)",
+        6 => "Floor",
+        7 => "User (self-target or front after charging)",
+        8 => "Front (cuts corners)",
+        9 => "Front_2 (2 tiles, cuts corners, AI aware)",
+        15 => "Special (unique range, move-specific behavior)",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+fn ai_condition_str(value: u8) -> String {
+    match value {
+        0 => "Always eligible",
+        1 => "Random chance (uses ai_random_use_chance %)",
+        2 => "Target HP <= 25%",
+        3 => "Target has negative status",
+        4 => "Target is asleep/napping/nightmare",
+        5 => "Target HP <= 25% or has negative status",
+        6 => "Target is Ghost type and not exposed",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+/// Unpack a 16-bit target_range field into (target, range, ai_condition)
+fn unpack_target_range(packed: u16) -> (u8, u8, u8) {
+    let target = (packed & 0x0F) as u8;
+    let range = ((packed >> 4) & 0x0F) as u8;
+    let ai_condition = ((packed >> 8) & 0x0F) as u8;
+    (target, range, ai_condition)
+}
+
 /// Represents a single move entry from waza_p.bin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoveData {
     pub move_id: u16,
     pub name: String,
     pub base_power: u16,
-    pub move_type: u8,
-    pub category: u8,
-    pub target_range: u16,
-    pub ai_target_range: u16,
-    pub base_pp: u8,
+    pub move_type: String,
+    pub category: String,
+    pub target: String,
+    pub range: String,
+
+    pub ai_target: String,
+    pub ai_range: String,
+    pub ai_use_condition: String,
+    pub ai_random_use_chance: u8,
     pub ai_weight: u8,
+    pub ai_can_use_against_frozen: bool,
+
+    pub pp: u8,
     pub accuracy1: u8,
     pub accuracy2: u8,
-    pub ai_condition_random_chance: u8,
     pub strikes: u8,
-    pub max_ginseng_boost: u8,
     pub crit_chance: u8,
+    pub max_ginseng_boost: u8,
+    // Interaction flags
     pub reflected_by_magic_coat: bool,
     pub can_be_snatched: bool,
     pub fails_while_muzzled: bool,
-    pub ai_can_use_against_frozen: bool,
     pub usable_while_taunted: bool,
-    pub range_string_idx: u8,
     pub message_string_idx: u16,
-    // derived
-    pub move_range_distance: u8,
 }
 
 /// Main extractor struct
@@ -106,11 +201,10 @@ impl<'a> MoveDataExtractor<'a> {
 
     /// Load move names from text_e.str
     fn load_move_names(&self) -> io::Result<Vec<String>> {
-        // Try different possible paths for the text file
         let possible_paths = [
             "MESSAGE/text_e.str",
             "MESSAGE/text_e.bin",
-            "MESSAGE/text_j.str", // Japanese version
+            "MESSAGE/text_j.str",
             "MESSAGE/text_j.bin",
         ];
 
@@ -134,9 +228,6 @@ impl<'a> MoveDataExtractor<'a> {
         let strings = self.parse_string_table(text_data)?;
         println!("  Parsed {} total strings from text file", strings.len());
 
-        // Extract move names from the string table
-        // Move names start at different indices depending on the game version
-        // For Explorers of Sky (US), moves typically start around index 3200-3300
         let move_names = self.extract_move_names_from_strings(&strings)?;
 
         Ok(move_names)
@@ -147,7 +238,6 @@ impl<'a> MoveDataExtractor<'a> {
         let mut cursor = Cursor::new(data);
         let mut pointers = Vec::new();
 
-        // Read pointers until we hit a pointer that equals or exceeds the file size
         loop {
             if cursor.position() as usize + 4 > data.len() {
                 break;
@@ -155,7 +245,6 @@ impl<'a> MoveDataExtractor<'a> {
 
             let ptr = read_u32_le(&mut cursor)?;
 
-            // If pointer is beyond file size, we've read all pointers
             if ptr as usize >= data.len() {
                 pointers.push(ptr);
                 break;
@@ -170,7 +259,6 @@ impl<'a> MoveDataExtractor<'a> {
 
         println!("  Found {} string pointers", pointers.len());
 
-        // Extract strings from the pointers
         let mut strings = Vec::with_capacity(pointers.len());
 
         for i in 0..pointers.len() - 1 {
@@ -182,7 +270,6 @@ impl<'a> MoveDataExtractor<'a> {
                 continue;
             }
 
-            // Read null-terminated string
             let string_data = &data[start..end];
             let null_pos = string_data
                 .iter()
@@ -190,7 +277,6 @@ impl<'a> MoveDataExtractor<'a> {
                 .unwrap_or(string_data.len());
             let str_bytes = &string_data[..null_pos];
 
-            // Convert to string (handle encoding - typically ISO 8859-1 for English)
             let text = String::from_utf8_lossy(str_bytes).to_string();
             strings.push(text);
         }
@@ -199,7 +285,7 @@ impl<'a> MoveDataExtractor<'a> {
     }
 
     fn extract_move_names_from_strings(&self, strings: &[String]) -> io::Result<Vec<String>> {
-        const MOVE_NAMES_BEGIN: usize = 8173; // For EoS NA
+        const MOVE_NAMES_BEGIN: usize = 8173;
         const MOVE_NAMES_END: usize = 8734;
 
         if strings.len() < MOVE_NAMES_END {
@@ -213,7 +299,6 @@ impl<'a> MoveDataExtractor<'a> {
             ));
         }
 
-        // Extract the sequential move names
         let move_names = strings[MOVE_NAMES_BEGIN..MOVE_NAMES_END].to_vec();
 
         Ok(move_names)
@@ -245,43 +330,35 @@ impl<'a> MoveDataExtractor<'a> {
     fn parse_move_data(&self, sir0: &Sir0, move_names: &[String]) -> io::Result<Vec<MoveData>> {
         let mut cursor = Cursor::new(&sir0.content as &[u8]);
 
-        // Seek to the data pointer (Waza Header)
         cursor.set_position(sir0.data_pointer as u64);
 
-        // Read Waza Header (2 pointers)
         let ptr_moves_data = read_u32_le(&mut cursor)?;
         let _ptr_moveset_table = read_u32_le(&mut cursor)?;
 
         println!("  Moves data pointer: 0x{:X}", ptr_moves_data);
 
-        // Seek to moves data
         cursor.set_position(ptr_moves_data as u64);
 
         let mut moves = Vec::new();
         let mut move_index = 0;
 
-        // Read move entries until we hit padding (0xAA bytes)
         loop {
             let current_pos = cursor.position() as usize;
 
-            // Check if we've hit padding or end of data
             if current_pos + 26 > sir0.content.len() {
                 break;
             }
 
-            // Check for 0xAA padding marker
             if sir0.content[current_pos] == 0xAA {
                 println!("  Found padding marker at offset 0x{:X}", current_pos);
                 break;
             }
 
-            // Get move name from the string table
             let name = move_names
                 .get(move_index)
                 .cloned()
                 .unwrap_or_else(|| format!("Unknown_{:04}", move_index));
 
-            // Parse 26-byte move entry
             let move_data = self.parse_move_entry(&mut cursor, name)?;
             moves.push(move_data);
 
@@ -294,15 +371,15 @@ impl<'a> MoveDataExtractor<'a> {
     /// Parse a single 26-byte move entry
     fn parse_move_entry(&self, cursor: &mut Cursor<&[u8]>, name: String) -> io::Result<MoveData> {
         let base_power = read_u16_le(cursor)?; // 0x00
-        let move_type = read_u8(cursor)?; // 0x02
-        let category = read_u8(cursor)?; // 0x03
-        let target_range = read_u16_le(cursor)?; // 0x04
-        let ai_target_range = read_u16_le(cursor)?; // 0x06
-        let base_pp = read_u8(cursor)?; // 0x08
+        let raw_type = read_u8(cursor)?; // 0x02
+        let raw_category = read_u8(cursor)?; // 0x03
+        let raw_target_range = read_u16_le(cursor)?; // 0x04
+        let raw_ai_target_range = read_u16_le(cursor)?; // 0x06
+        let pp = read_u8(cursor)?; // 0x08
         let ai_weight = read_u8(cursor)?; // 0x09
         let accuracy1 = read_u8(cursor)?; // 0x0A
         let accuracy2 = read_u8(cursor)?; // 0x0B
-        let ai_condition_random_chance = read_u8(cursor)?; // 0x0C
+        let ai_random_use_chance = read_u8(cursor)?; // 0x0C
         let strikes = read_u8(cursor)?; // 0x0D
         let max_ginseng_boost = read_u8(cursor)?; // 0x0E
         let crit_chance = read_u8(cursor)?; // 0x0F
@@ -311,55 +388,50 @@ impl<'a> MoveDataExtractor<'a> {
         let fails_while_muzzled = read_u8(cursor)? != 0; // 0x12
         let ai_can_use_against_frozen = read_u8(cursor)? != 0; // 0x13
         let usable_while_taunted = read_u8(cursor)? != 0; // 0x14
-        let range_string_idx = read_u8(cursor)?; // 0x15
+        let _range_string_idx = read_u8(cursor)?; // 0x15
         let move_id = read_u16_le(cursor)?; // 0x16
         let message_string_idx = read_u16_le(cursor)?; // 0x18
 
-        let upper_nibble = (target_range as u8) & 0xF0;
-        let move_range_distance = match upper_nibble {
-            0x50 => 10,
-            0x90 => 2,
-            0x80 => 1,
-            _ => 0,
-        };
+        let (target_val, range_val, _ai_cond_val) = unpack_target_range(raw_target_range);
+        let (ai_target_val, ai_range_val, ai_cond_val) = unpack_target_range(raw_ai_target_range);
 
         Ok(MoveData {
             move_id,
             name,
             base_power,
-            move_type,
-            category,
-            target_range,
-            ai_target_range,
-            base_pp,
+            move_type: move_type_str(raw_type),
+            category: move_category_str(raw_category),
+            target: move_target_str(target_val),
+            range: move_range_str(range_val),
+            ai_target: move_target_str(ai_target_val),
+            ai_range: move_range_str(ai_range_val),
+            ai_use_condition: ai_condition_str(ai_cond_val),
+            ai_random_use_chance,
             ai_weight,
+            ai_can_use_against_frozen,
+            pp,
             accuracy1,
             accuracy2,
-            ai_condition_random_chance,
             strikes,
-            max_ginseng_boost,
             crit_chance,
+            max_ginseng_boost,
             reflected_by_magic_coat,
             can_be_snatched,
             fails_while_muzzled,
-            ai_can_use_against_frozen,
             usable_while_taunted,
-            range_string_idx,
             message_string_idx,
-            move_range_distance,
         })
     }
 
     /// Save move lookup JSON (name -> ID mapping) with snake_case keys
     fn save_move_lookup(&self, moves: &[MoveData], output_dir: &Path) -> io::Result<()> {
         fn to_snake_case(s: &str) -> String {
-            let mut result = String::with_capacity(s.len() + 3); // pre-allocate for `_`
+            let mut result = String::with_capacity(s.len() + 3);
 
             for (i, ch) in s.chars().enumerate() {
                 match ch {
                     ' ' | '-' => result.push('_'),
-                    '\'' => continue, // skip apostrophes
-                    // create var `c` if `c.is_uppercase()` is true. For pascal case scenarios
+                    '\'' => continue,
                     c if c.is_uppercase() => {
                         if i > 0 && !result.ends_with('_') {
                             result.push('_');
@@ -376,8 +448,8 @@ impl<'a> MoveDataExtractor<'a> {
         let lookup: HashMap<String, u16> = moves
             .iter()
             .enumerate()
-            .map(|(idx, m)| (to_snake_case(&m.name), idx as u16)) // transforms each element into a tuple
-            .collect(); // convert the tuple to a HashMap
+            .map(|(idx, m)| (to_snake_case(&m.name), idx as u16))
+            .collect();
 
         let output_path = output_dir.join("move_lookup.json");
         let file = File::create(&output_path)?;
