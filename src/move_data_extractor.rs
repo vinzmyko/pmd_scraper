@@ -126,6 +126,22 @@ fn ai_condition_str(value: u8) -> String {
     .to_string()
 }
 
+/// Maps the AI range nibble to GetMoveRangeDistance's return value.
+///
+/// Only three AI range values produce a nonzero distance, everything else returns 0.
+/// Used by FUN_023230fc as param_3 to drive projectile loop count and amplitude.
+///
+/// Range 4 ("Front_2, AI unaware") returns 0, NOT 2. Only range 9
+/// ("Front_2, AI aware") drives 2-tile projectile travel.
+fn move_range_distance(ai_range_val: u8) -> i32 {
+    match ai_range_val {
+        5 => 10, // Front_10 (10 tiles)
+        8 => 1,  // Front (cuts corners)
+        9 => 2,  // Front_2 (2 tiles, AI aware)
+        _ => 0,  // Includes range 4 (Front_2 AI unaware) — confirmed via Ghidra
+    }
+}
+
 /// Unpack a 16-bit target_range field into (target, range, ai_condition)
 fn unpack_target_range(packed: u16) -> (u8, u8, u8) {
     let target = (packed & 0x0F) as u8;
@@ -151,6 +167,8 @@ pub struct MoveData {
     pub ai_random_use_chance: u8,
     pub ai_weight: u8,
     pub ai_can_use_against_frozen: bool,
+
+    pub move_range_distance: i32,
 
     pub pp: u8,
     pub accuracy1: u8,
@@ -409,6 +427,7 @@ impl<'a> MoveDataExtractor<'a> {
             ai_random_use_chance,
             ai_weight,
             ai_can_use_against_frozen,
+            move_range_distance: move_range_distance(ai_range_val),
             pp,
             accuracy1,
             accuracy2,
