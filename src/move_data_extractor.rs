@@ -161,6 +161,10 @@ pub struct MoveData {
     pub target: String,
     pub range: String,
 
+    /// AI-use targeting (waza_p.bin offset 0x06). Also the effective release
+    /// range for two-turn moves and the source GetMoveRangeDistance() reads for
+    /// projectile distance regardless of caster. For two-turn moves the player
+    /// field (0x04) is only the charge-turn placeholder.
     pub ai_target: String,
     pub ai_range: String,
     pub ai_use_condition: String,
