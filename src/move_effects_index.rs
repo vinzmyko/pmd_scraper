@@ -74,11 +74,32 @@ pub enum AnimationDetails {
     },
 }
 
-/// Defines a screen-wide visual effect
+/// Defines a screen-wide visual effect (anim_type 5).
 #[derive(Serialize, Debug)]
 pub struct ScreenEffect {
     #[serde(rename = "effect_name")]
     pub effect_name: String,
+    /// Horizontal sheet of `frame_count` frames, each `frame_width` x `frame_height`.
+    pub sprite_sheet: String,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub frame_count: usize,
+    #[serde(rename = "loop")]
+    pub looping: bool,
+    /// If true, the game continues without waiting for the effect to finish.
+    pub is_non_blocking: bool,
+    pub frames: Vec<ScreenFrameInfo>,
+}
+
+/// Per-frame timing/blend data for a screen effect.
+#[derive(Serialize, Debug)]
+pub struct ScreenFrameInfo {
+    /// Frame duration in seconds (same conversion as `SpriteEffect`).
+    pub duration: f32,
+    /// Raw per-frame blend value. Client uses `(alpha >> 8) / 255.0`. Not baked.
+    pub alpha: u16,
+    /// Textures per column for this frame.
+    pub row_height: u16,
 }
 
 /// Defines the effects associated with a particular move

@@ -14,6 +14,7 @@ use crate::{
     },
     data::animation_info::{AnimType, EffectAnimationInfo, MoveAnimationInfo},
     graphics::{
+        screen_effect::{parse_screen_effect, render_screen_frame, ScreenEffectFile},
         wan::{
             model::WanFile,
             parser::{parse_wan_from_sir0_content, parse_wan_palette_only},
@@ -23,7 +24,7 @@ use crate::{
     },
     move_effects_index::{
         AnimationDetails, AnimationSequence, EffectDefinition, EffectLayer, MoveData,
-        MoveEffectTrigger, MoveEffectsIndex, ScreenEffect, SpriteEffect,
+        MoveEffectTrigger, MoveEffectsIndex, ScreenEffect, ScreenFrameInfo, SpriteEffect,
     },
     progress::write_progress,
     rom::Rom,
@@ -158,12 +159,28 @@ impl<'a> EffectAssetPipeline<'a> {
                     }
                 }
                 AnimType::Screen => {
-                    // TODO: Type 5 screen effects use file_index + 268 (0x10C) for actual file lookup
-                    // See EFFECT_ANIMATION_INFO Findings.md for details
-                    effects_skipped += 1;
-                    Some(EffectDefinition::Screen(ScreenEffect {
-                        effect_name: format!("ScreenEffect_{}", effect_id),
-                    }))
+                    match self.process_screen_effect(*effect_id, effect_info, &sprites_dir) {
+                        Ok(Some(entry)) => {
+                            effects_processed += 1;
+                            write_progress(
+                                progress_path,
+                                effects_processed,
+                                total_effects,
+                                "move_effect_sprites",
+                                "running",
+                            );
+                            Some(entry)
+                        }
+                        Ok(None) => {
+                            effects_skipped += 1;
+                            None
+                        }
+                        Err(e) => {
+                            eprintln!(" -> ERROR processing screen effect {}: {}", effect_id, e);
+                            errors += 1;
+                            None
+                        }
+                    }
                 }
                 _ => {
                     println!(" -> Skipping: Unsupported type");
@@ -520,7 +537,7 @@ impl<'a> EffectAssetPipeline<'a> {
             .frames
             .iter()
             .map(|frame| {
-                let duration_sec = (frame.duration as f32 / 59.8261 * 10000.0).round() / 10000.0;
+                let duration_sec = ticks_to_seconds(frame.duration);
                 // zero out the offsets in the JSON since they're now baked into animation sheet
                 [duration_sec, 0.0, 0.0]
             })
@@ -923,4 +940,105 @@ impl<'a> EffectAssetPipeline<'a> {
             )
         })
     }
+
+    /// Renders a type-5 screen effect to a horizontal sheet and builds its index entry.
+    ///
+    /// The actual file lives at `effect_animation_info.file_index + 0x10C` (268).
+    /// Returns `Ok(None)` when the effect has no frames.
+    fn process_screen_effect(
+        &self,
+        effect_id: u16,
+        effect_info: &EffectAnimationInfo,
+        sprites_dir: &Path,
+    ) -> io::Result<Option<EffectDefinition>> {
+        let file_index = effect_info.file_index as usize + 0x10C;
+
+        let effect_bin = self
+            .effect_bin
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "effect.bin not loaded"))?;
+        if file_index >= effect_bin.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Screen effect file_index {} out of range", file_index),
+            ));
+        }
+
+        let screen = parse_screen_effect_from_data(&effect_bin[file_index])?;
+        if screen.frames.is_empty() {
+            println!(
+                " -> WARNING: screen effect {} has no frames, skipping",
+                effect_id
+            );
+            return Ok(None);
+        }
+
+        // Every frame is exactly 256x160; stitch them into one horizontal strip.
+        let count = screen.frames.len() as u32;
+        let mut sheet = image::RgbaImage::new(256 * count, 160);
+        for (i, frame) in screen.frames.iter().enumerate() {
+            let fimg = render_screen_frame(&screen, frame);
+            image::imageops::overlay(&mut sheet, &fimg, (i as u32 * 256) as i64, 0);
+        }
+
+        let sheet_path = sprites_dir.join(format!("{}.png", effect_id));
+        self.save_effect_sprite_png(&sheet, &sheet_path)?;
+        println!(
+            " -> SUCCESS: Screen sheet saved to {}",
+            sheet_path.display()
+        );
+
+        let frames_meta = screen
+            .frames
+            .iter()
+            .map(|f| ScreenFrameInfo {
+                duration: ticks_to_seconds(f.duration),
+                alpha: f.alpha,
+                row_height: f.row_height,
+            })
+            .collect();
+
+        Ok(Some(EffectDefinition::Screen(ScreenEffect {
+            effect_name: format!("ScreenEffect_{}", effect_id),
+            sprite_sheet: format!("res://effect_sprites/{}.png", effect_id),
+            frame_width: 256,
+            frame_height: 160,
+            frame_count: screen.frames.len(),
+            looping: effect_info.loop_flag,
+            is_non_blocking: effect_info.is_non_blocking,
+            frames: frames_meta,
+        })))
+    }
+}
+
+/// Convert raw animation ticks (1/60s) to seconds.
+fn ticks_to_seconds(ticks: u16) -> f32 {
+    (ticks as f32 / 59.8261 * 10000.0).round() / 10000.0
+}
+
+/// Decompress (PKDPX or raw), unwrap SIR0, and parse a screen effect.
+fn parse_screen_effect_from_data(data: &[u8]) -> io::Result<ScreenEffectFile> {
+    let decompressed = if data.starts_with(b"PKDPX") {
+        PkdpxContainer::deserialise(data)?
+            .decompress()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+    } else {
+        data.to_vec()
+    };
+    if !decompressed.starts_with(b"SIR0") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Screen effect data is not SIR0",
+        ));
+    }
+
+    let sir0 = sir0::Sir0::from_bytes(&decompressed)?;
+    if sir0.data_pointer as usize >= sir0.content.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "SIR0 data pointer out of bounds",
+        ));
+    }
+
+    Ok(parse_screen_effect(&sir0.content, sir0.data_pointer)?)
 }
