@@ -274,6 +274,7 @@ pub struct RegionData {
     pub effect_animation_table_overlay: u8,
     pub effect_animation_table_offset: u32,
     pub effect_animation_entry_size: u32,
+    pub tileset_properties_addr: u32,
 }
 
 pub const NA_REGION_DATA: RegionData = RegionData {
@@ -284,6 +285,7 @@ pub const NA_REGION_DATA: RegionData = RegionData {
     effect_animation_table_overlay: 29,
     effect_animation_table_offset: 0x4152C,
     effect_animation_entry_size: 16,
+    tileset_properties_addr: 0x022C631C,
 };
 
 pub const EU_REGION_DATA: RegionData = RegionData {
@@ -294,6 +296,7 @@ pub const EU_REGION_DATA: RegionData = RegionData {
     effect_animation_table_overlay: 29,
     effect_animation_table_offset: 0x41654,
     effect_animation_entry_size: 16,
+    tileset_properties_addr: 0, // TODO: unknown for EU
 };
 
 pub const JP_REGION_DATA: RegionData = RegionData {
@@ -304,6 +307,7 @@ pub const JP_REGION_DATA: RegionData = RegionData {
     effect_animation_table_overlay: 29,
     effect_animation_table_offset: 0x41354,
     effect_animation_entry_size: 16,
+    tileset_properties_addr: 0, // TODO: unknown for JP
 };
 
 pub fn get_region_data(game_code: &str) -> Option<RegionData> {

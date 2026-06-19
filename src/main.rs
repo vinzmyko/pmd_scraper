@@ -84,6 +84,18 @@ fn main() {
             let _ = animation_info_extractor
                 .save_animation_info_json(&anim_data_info, &output_dir_jsons);
 
+            match rom.extract_tileset_properties() {
+                Ok(props) => {
+                    let path = output_dir_jsons.join("tileset_properties.json");
+                    if let Err(e) = data::tileset_properties::save_json(&props, &path) {
+                        eprintln!("Failed to write tileset_properties.json: {}", e);
+                    } else {
+                        println!("Wrote {} tileset properties to DATA/", props.len());
+                    }
+                }
+                Err(e) => eprintln!("Failed to extract tileset properties: {}", e),
+            }
+
             let move_data_extractor = MoveDataExtractor::new(&rom);
             let _ = move_data_extractor.extract_and_save(&output_dir_jsons);
 

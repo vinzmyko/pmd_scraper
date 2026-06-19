@@ -200,6 +200,37 @@ impl Rom {
 
         parse_animation_data(&animation_data)
     }
+
+    /// Read the overlay-10 TILESET_PROPERTIES table.
+    pub fn extract_tileset_properties(
+        &mut self,
+    ) -> Result<Vec<crate::data::tileset_properties::TilesetProperty>, String> {
+        use crate::data::tileset_properties::{parse_tileset_properties, TILESET_COUNT};
+
+        let addr = self.region_data.tileset_properties_addr;
+        if addr == 0 {
+            return Err("TILESET_PROPERTIES address not known for this region".to_string());
+        }
+
+        if !self.loaded_overlays.contains_key(&10) {
+            self.load_arm9_overlays(&[10]).map_err(|e| e.to_string())?;
+        }
+        let overlay10 = self
+            .loaded_overlays
+            .get(&10)
+            .ok_or_else(|| "Overlay 10 not loaded".to_string())?;
+
+        let base = overlay10.ram_address;
+        if addr < base {
+            return Err(format!(
+                "TILESET_PROPERTIES addr 0x{:X} below overlay 10 base 0x{:X}",
+                addr, base
+            ));
+        }
+        let file_offset = (addr - base) as usize;
+
+        parse_tileset_properties(&overlay10.data, file_offset, TILESET_COUNT)
+    }
 }
 
 /// ROM header information
