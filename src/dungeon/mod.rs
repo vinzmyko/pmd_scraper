@@ -1,3 +1,4 @@
+pub mod colvec;
 pub mod dungeon_names;
 pub mod ripples;
 pub mod shadows;
