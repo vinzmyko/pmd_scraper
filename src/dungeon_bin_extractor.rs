@@ -101,6 +101,13 @@ impl<'a> DungeonBinExtractor<'a> {
         }
         write_progress(progress_path, 2, 2, "dungeon_extras", "running");
 
+        // Weather asset extraction (3D overlay textures + colvec colour table)
+        let weather_output_dir = output_dir.parent().unwrap().join("weather");
+        println!("Extracting weather assets...");
+        if let Err(e) = dungeon::weather::extract_weather_assets(&binpack, &weather_output_dir) {
+            eprintln!("  -> Error extracting weather assets: {}", e);
+        }
+
         Ok(())
     }
 }
