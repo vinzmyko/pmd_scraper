@@ -11,6 +11,7 @@ mod pokemon_sprite_extractor;
 mod progress;
 mod rom;
 mod status_icon_extractor;
+mod weather_manifest;
 
 mod containers;
 mod data;
@@ -160,6 +161,10 @@ fn main() {
                 &cli.progress,
                 tileset_properties.as_deref(),
             );
+
+            if let Err(e) = weather_manifest::build_and_save(&output_dir_pipeline) {
+                eprintln!("Failed to write weather manifest: {}", e);
+            }
 
             let output_dir_status_icons = output_dir_pipeline.join("STATUS_ICONS");
             write_progress(&cli.progress, 0, 33, "status_icons", "running");
