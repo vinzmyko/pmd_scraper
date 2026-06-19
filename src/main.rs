@@ -84,7 +84,8 @@ fn main() {
             let _ = animation_info_extractor
                 .save_animation_info_json(&anim_data_info, &output_dir_jsons);
 
-            match rom.extract_tileset_properties() {
+            // Tileset properties (overlay 10): weather_effect / is_water / map_color
+            let tileset_properties = match rom.extract_tileset_properties() {
                 Ok(props) => {
                     let path = output_dir_jsons.join("tileset_properties.json");
                     if let Err(e) = data::tileset_properties::save_json(&props, &path) {
@@ -92,9 +93,13 @@ fn main() {
                     } else {
                         println!("Wrote {} tileset properties to DATA/", props.len());
                     }
+                    Some(props)
                 }
-                Err(e) => eprintln!("Failed to extract tileset properties: {}", e),
-            }
+                Err(e) => {
+                    eprintln!("Failed to extract tileset properties: {}", e);
+                    None
+                }
+            };
 
             let move_data_extractor = MoveDataExtractor::new(&rom);
             let _ = move_data_extractor.extract_and_save(&output_dir_jsons);
@@ -153,6 +158,7 @@ fn main() {
                 None,
                 &output_dir_dungeons,
                 &cli.progress,
+                tileset_properties.as_deref(),
             );
 
             let output_dir_status_icons = output_dir_pipeline.join("STATUS_ICONS");

@@ -8,6 +8,7 @@ use image::{Rgba, RgbaImage};
 use serde::Serialize;
 
 use super::{dma::DmaType, dpci::DPCI_TILE_DIM, dpla::DplaColourEntry, DungeonTileset};
+use crate::data::tileset_properties::TilesetProperty;
 
 const N: u8 = 16;
 const S: u8 = 1;
@@ -103,6 +104,12 @@ pub struct TilesetMetadata {
     pub palette_11_frames: usize,
     pub durations_palette_10: Vec<u16>,
     pub durations_palette_11: Vec<u16>,
+    pub map_color: i32,
+    pub weather_effect: u8,
+    pub is_water_tileset: bool,
+    /// Mist overlay texture to tile, or None.
+    /// when this tileset has no mist (`weather_effect == 0`).
+    pub mist_texture: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -132,6 +139,7 @@ struct LayoutTile {
 pub fn render_tileset(
     tileset: &DungeonTileset,
     output_dir: &Path,
+    property: Option<&TilesetProperty>,
 ) -> Result<TilesetMetadata, io::Error> {
     let dungeon_name = crate::dungeon::dungeon_names::tileset_name(tileset.tileset_id);
     let name = format!("{:03}_{}", tileset.tileset_id, dungeon_name);
@@ -151,6 +159,17 @@ pub fn render_tileset(
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     }
 
+    let (map_color, weather_effect, is_water_tileset) = match property {
+        Some(p) => (p.map_color, p.weather_effect, p.is_water_tileset),
+        None => (0, 0, false),
+    };
+
+    let mist_texture = if weather_effect != 0 {
+        Some("mist_1031.png".to_string())
+    } else {
+        None
+    };
+
     Ok(TilesetMetadata {
         tileset_id: tileset.tileset_id,
         filename: format!("{}.png", name),
@@ -165,6 +184,10 @@ pub fn render_tileset(
             .iter()
             .map(|c| c.duration)
             .collect(),
+        map_color,
+        weather_effect,
+        is_water_tileset,
+        mist_texture,
     })
 }
 
@@ -205,7 +228,10 @@ pub fn write_layout_json(output_dir: &Path) -> Result<(), io::Error> {
         num_variants: NUM_VARIANTS,
         x_offset_per_variant: VARIANT_BLOCK_WIDTH,
         x_offset_per_tile_type: TILE_TYPE_SET_WIDTH,
-        tile_types: TILE_TYPES.iter().map(|(_, name)| name.to_string()).collect(),
+        tile_types: TILE_TYPES
+            .iter()
+            .map(|(_, name)| name.to_string())
+            .collect(),
         neighbour_bits,
         tiles,
     };

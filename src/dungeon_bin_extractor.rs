@@ -2,6 +2,7 @@ use std::{fs, io, path::Path};
 
 use crate::{
     containers::binpack::BinPack,
+    data::tileset_properties::TilesetProperty,
     dungeon::{
         self,
         tileset::{self, render},
@@ -25,6 +26,7 @@ impl<'a> DungeonBinExtractor<'a> {
         tileset_ids: Option<Vec<usize>>,
         output_dir: &Path,
         progress_path: &Path,
+        properties: Option<&[TilesetProperty]>,
     ) -> io::Result<()> {
         let dungeon_bin_id = self
             .rom
@@ -59,8 +61,10 @@ impl<'a> DungeonBinExtractor<'a> {
         for (i, &tileset_id) in ids.iter().enumerate() {
             println!("Extracting tileset {}...", tileset_id);
 
+            let property = properties.and_then(|p| p.get(tileset_id));
+
             match tileset::extract_tileset(&binpack, tileset_id) {
-                Ok(tileset) => match render::render_tileset(&tileset, output_dir) {
+                Ok(tileset) => match render::render_tileset(&tileset, output_dir, property) {
                     Ok(meta) => {
                         let status = if meta.animated { "animated" } else { "static" };
                         println!("  -> {} ({})", meta.filename, status);
