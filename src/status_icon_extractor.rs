@@ -236,7 +236,7 @@ const BIT_FLAGS: [(u8, &str); 32] = [
     (1, "burn"),
     (2, "poison"),
     (3, "toxic"),
-    (4, "confused"),
+    (4, "confusion"),
     (5, "cowering"),
     (6, "taunt"),
     (7, "encore"),
